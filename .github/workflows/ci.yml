@@ -1,7 +1,10 @@
 name: ci
 
 on:
+  # All branches, but not tags: a release tag is the same tree that was already
+  # tested on its branch, and a tag run would just spend the minutes twice.
   push:
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
