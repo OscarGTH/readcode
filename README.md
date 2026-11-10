@@ -124,6 +124,9 @@ the code it describes:
   whenever the verdict is not "correct", and the whole answer when you said you did not
   know. Grading that only marks you down is not teaching.
 
+Entries are separated by a rule as well as a slightly different background: the rule reads
+in any terminal and needs no colour, and the shade helps when you are scrolling fast.
+
 A correct line stops at `you`: praise is not information, and a review you have to scroll
 through is one you stop reading. Reading comes once, at the end of the sitting, deduplicated
 by topic — from a table keyed by concept namespace rather than from the model, because a
@@ -169,6 +172,33 @@ comment on whichever line happened to open the block.
 You do not choose: the first visit uses whatever the snippet is authored for, and the
 next visit to the same snippet **alternates** to the other mode. Same code, different
 question. `--lines` / `--blocks` override it for one sitting.
+
+### Seeing where you are
+
+`readcode status` answers three questions and stops:
+
+```
+level 1 · just started — values, arithmetic, printing
+  ███░░░░░  40%  0/9 solid at this level
+
+  1 of 9 snippets seen · 1 new at your level
+  nothing due now · next review in 24h
+
+needs work
+  rust.binding.immutable           ███░░░░░  40%  in 24h
+  rust.fn.main                     ███░░░░░  40%  in 24h
+  ...
+```
+
+The bar is average strength, not the count of mastered concepts: one correct answer is real
+progress, and a bar that sits at 0% for three sittings says nothing moved. The strict count
+(`0/9 solid`) stays next to it, because "solid" is what schedules the long intervals.
+
+After every sitting you get one line of the same: `level 1 · 3 of 9 solid at this level`.
+
+`readcode` never re-offers a snippet you have answered while there is anything else to do at
+your level — either a snippet you have not met, or a concept that has come due again. A rung
+only becomes "old" when it is actually exhausted, not when it stops feeling new.
 
 ### Where progress lives
 

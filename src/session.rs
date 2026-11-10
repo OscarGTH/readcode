@@ -70,16 +70,24 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
             .copied()
             .filter(|snippet| snippet.levels().from <= level)
             .collect();
-        let rung_is_solid = !at_or_below.is_empty()
-            && at_or_below.iter().all(|snippet| {
-                snippet.concepts().iter().all(|concept| {
-                    progress
-                        .concepts
-                        .get(concept)
-                        .is_some_and(|state| state.is_mastered())
-                })
+        // Stay on the rung while it still has something to do: a snippet you have
+        // not met, or a concept that has come due again. Requiring everything at
+        // this level to be *mastered* before moving on pinned a beginner to the
+        // two level-1 snippets for days — the same snippets, again and again,
+        // after they had been answered correctly.
+        let unseen = at_or_below
+            .iter()
+            .any(|snippet| !progress.seen(&snippet.id));
+        let due = at_or_below
+            .iter()
+            .flat_map(|snippet| snippet.concepts())
+            .any(|concept| {
+                progress
+                    .concepts
+                    .get(&concept)
+                    .is_none_or(|state| state.due_at <= now)
             });
-        if !rung_is_solid {
+        if !at_or_below.is_empty() && (unseen || due) {
             pool = at_or_below;
         }
     }
@@ -770,6 +778,87 @@ mod tests {
         assert!(
             seen_high,
             "an unset level should not hide the harder snippets"
+        );
+    }
+
+    #[test]
+    fn a_answered_snippet_is_not_offered_again_while_the_rung_has_new_work() {
+        let corpus = corpus();
+        let now = 5_000_000u64;
+        let mut progress = Progress {
+            level: Some(1),
+            ..Progress::default()
+        };
+        // Answer every level-1 snippet once, correctly: seen, and scheduled ahead.
+        let level_one: Vec<_> = corpus
+            .snippets()
+            .iter()
+            .filter(|snippet| snippet.levels().from <= 1)
+            .cloned()
+            .collect();
+        for snippet in &level_one {
+            progress.seen_snippets.push(snippet.id.clone());
+            for concept in snippet.concepts() {
+                progress.concept_mut(&concept).apply(Verdict::Correct, now);
+            }
+        }
+
+        // Level 1 is now answered and not due, so the next rung is fair game even
+        // though nothing is "mastered" yet.
+        let mut offered: Vec<String> = Vec::new();
+        for seed in 0..40u64 {
+            let picked = pick(&corpus, &progress, seed).unwrap();
+            offered.push(picked.id.clone());
+        }
+        offered.sort();
+        offered.dedup();
+        assert!(
+            offered
+                .iter()
+                .any(|id| !level_one.iter().any(|s| &s.id == id)),
+            "only finished level-1 snippets were offered: {offered:?}"
+        );
+    }
+
+    #[test]
+    fn a_concept_that_came_due_pulls_its_snippet_back() {
+        let corpus = corpus();
+        let now = 9_000_000u64;
+        let mut progress = Progress {
+            level: Some(1),
+            ..Progress::default()
+        };
+        let level_one: Vec<_> = corpus
+            .snippets()
+            .iter()
+            .filter(|snippet| snippet.levels().from <= 1)
+            .cloned()
+            .collect();
+        for snippet in &level_one {
+            progress.seen_snippets.push(snippet.id.clone());
+            for concept in snippet.concepts() {
+                progress.concept_mut(&concept).apply(Verdict::Correct, now);
+            }
+        }
+        // One concept from the first snippet falls due long before the rest.
+        let first = &level_one[0];
+        let concept = first.concepts().into_iter().next().unwrap();
+        progress.concept_mut(&concept).due_at = now - 1;
+
+        // `pick` reads the clock as well as seeding its draw, so ask it about a
+        // time after the due date, not about the epoch.
+        let mut hits = 0;
+        let mut seen_ids = std::collections::BTreeSet::new();
+        for seed in 0..40u64 {
+            let picked = pick(&corpus, &progress, now + seed * 7).unwrap();
+            seen_ids.insert(picked.id.clone());
+            if picked.id == first.id {
+                hits += 1;
+            }
+        }
+        assert!(
+            hits > 0,
+            "the due snippet never came back; picked {seen_ids:?}"
         );
     }
 

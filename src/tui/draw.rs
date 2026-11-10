@@ -423,7 +423,14 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
             continue;
         };
         let band_start = rows.len();
-        rows.push(Line::raw(""));
+        if entry > 0 {
+            // A line, not just a shade: it reads in a colourless terminal too, and
+            // it says "this entry ends here" without asking the eye to compare two
+            // backgrounds.
+            rows.push(Line::from(Span::styled("─".repeat(width), Theme::hint())));
+        } else {
+            rows.push(Line::raw(""));
+        }
         // The verdict sits on the first code row, so one prompt is one block
         // rather than a header followed by the code it describes.
         code_rows(

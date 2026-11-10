@@ -147,6 +147,83 @@ enum Command {
     },
 }
 
+/// The numbers behind `readcode status`, gathered where both the corpus and the
+/// progress are in hand.
+fn progress_view<'a>(corpus: &Corpus, progress: &Progress, now: u64) -> ui::ProgressView<'a> {
+    use std::collections::BTreeSet;
+
+    let level = progress.level;
+    let mut at_level: BTreeSet<String> = BTreeSet::new();
+    let mut new_at_level = 0usize;
+    for snippet in corpus.snippets() {
+        let in_level = level.is_none_or(|level| snippet.levels().from <= level);
+        if !in_level {
+            continue;
+        }
+        at_level.extend(snippet.concepts());
+        if !progress.seen(&snippet.id) {
+            new_at_level += 1;
+        }
+    }
+
+    let solid_at_level = at_level
+        .iter()
+        .filter(|concept| {
+            progress
+                .concepts
+                .get(*concept)
+                .is_some_and(|state| state.is_mastered())
+        })
+        .count();
+
+    let mut needs_work: Vec<ConceptState> = progress
+        .concepts
+        .values()
+        .filter(|state| !state.is_mastered() || (state.due_at != 0 && state.due_at <= now))
+        .cloned()
+        .collect();
+    needs_work.sort_by(|a, b| b.urgency(now).total_cmp(&a.urgency(now)));
+
+    ui::ProgressView {
+        level,
+        level_name: level
+            .map(|level| readcode::snippet::LEVELS[level as usize - 1])
+            .unwrap_or(""),
+        solid_at_level,
+        total_at_level: at_level.len(),
+        strength_at_level: at_level
+            .iter()
+            .map(|concept| {
+                progress
+                    .concepts
+                    .get(concept)
+                    .map(|state| state.strength)
+                    .unwrap_or(0.0)
+            })
+            .sum(),
+        snippets_seen: progress.seen_snippets.len(),
+        snippets_total: corpus.snippets().len(),
+        new_at_level,
+        due_now: progress
+            .concepts
+            .values()
+            .filter(|state| state.due_at != 0 && state.due_at <= now)
+            .count(),
+        next_due: progress
+            .concepts
+            .values()
+            .filter(|state| state.due_at > now)
+            .map(|state| state.due_at)
+            .min(),
+        needs_work,
+        solid: progress
+            .concepts
+            .values()
+            .filter(|state| state.is_mastered())
+            .count(),
+    }
+}
+
 /// `--lines 12-24` (or `--lines 12`) as a 1-based slice of a file.
 fn slice_lines(source: &str, span: &str) -> Result<String> {
     let (start, end) = match span.split_once('-') {
@@ -254,8 +331,20 @@ fn main() -> Result<()> {
             };
             if outcome.is_some() {
                 progress.save(&progress_path)?;
+                let view = progress_view(&corpus, &progress, now);
+                if view.total_at_level > 0 {
+                    writeln!(
+                        out,
+                        "{}",
+                        style.dim(&format!(
+                            "level {} · {} of {} solid at this level",
+                            progress.level.unwrap_or(1),
+                            view.solid_at_level,
+                            view.total_at_level
+                        ))
+                    )?;
+                }
                 if let Some(advice) = session::level_advice(&corpus, &progress) {
-                    writeln!(out)?;
                     writeln!(out, "{}", style.dim(&advice))?;
                 }
             }
@@ -426,38 +515,20 @@ fn main() -> Result<()> {
 
         Command::Status => {
             let mut out = io::stdout();
-            let states: Vec<ConceptState> = progress.concepts.values().cloned().collect();
-            let states = ui::order_for_status(states, now);
-            ui::print_status(&mut out, style, &states, now)?;
-
-            let mastered = states.iter().filter(|state| state.is_mastered()).count();
-            let due = states
-                .iter()
-                .filter(|state| state.due_at != 0 && state.due_at <= now)
-                .count();
-            writeln!(out)?;
-            let level = match progress.level {
-                Some(level) => format!(
-                    "level {level} · {}",
-                    readcode::snippet::LEVELS[level as usize - 1]
-                ),
-                None => "level not set".to_string(),
-            };
-            writeln!(out, "{}", style.dim(&level))?;
+            let view = progress_view(&corpus, &progress, now);
+            ui::print_progress(&mut out, style, &view, now)?;
             if let Some(advice) = session::level_advice(&corpus, &progress) {
+                writeln!(out)?;
                 writeln!(out, "{}", style.cyan(&advice))?;
             }
-            writeln!(
-                out,
-                "{}",
-                style.dim(&format!(
-                    "{} sessions · {} of {} snippets seen · {} concepts, {mastered} mastered · {due} due now",
-                    progress.sessions,
-                    progress.seen_snippets.len(),
-                    corpus.snippets().len(),
-                    states.len()
-                ))
-            )?;
+            if let Some(next) = session::pick(&corpus, &progress, now) {
+                writeln!(out)?;
+                writeln!(
+                    out,
+                    "{}",
+                    style.dim(&format!("next · {} {}", next.id, next.title))
+                )?;
+            }
             Ok(())
         }
 

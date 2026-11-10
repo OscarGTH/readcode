@@ -347,6 +347,141 @@ pub fn print_grade(
 
 /// Groups stay contiguous and the weakest group comes first: a plain
 /// urgency sort interleaves groups and repeats their headers.
+/// Everything `readcode status` needs to answer three questions: where am I, what
+/// is due, and what should I do next. Built by the caller, which is the only place
+/// that has both the corpus and the progress.
+pub struct ProgressView<'a> {
+    pub level: Option<u8>,
+    pub level_name: &'a str,
+    /// Concepts in snippets at or below the learner's level, and how many are solid.
+    pub solid_at_level: usize,
+    pub total_at_level: usize,
+    /// Summed strength of the concepts at this level, for a bar that moves.
+    pub strength_at_level: f64,
+    pub snippets_seen: usize,
+    pub snippets_total: usize,
+    pub new_at_level: usize,
+    pub due_now: usize,
+    pub next_due: Option<u64>,
+    pub needs_work: Vec<ConceptState>,
+    pub solid: usize,
+}
+
+pub fn print_progress(
+    out: &mut dyn Write,
+    style: Style,
+    view: &ProgressView<'_>,
+    now: u64,
+) -> io::Result<()> {
+    match view.level {
+        Some(level) => writeln!(
+            out,
+            "{}",
+            style.bold(&format!("level {level} · {}", view.level_name))
+        )?,
+        None => writeln!(
+            out,
+            "{}",
+            style.dim("no level set — `readcode level <1-5>` or just run `readcode`")
+        )?,
+    }
+
+    if view.total_at_level > 0 {
+        // Average strength, not the count of mastered concepts: a first correct
+        // answer is real progress, and a bar that stays at 0% for three sittings
+        // tells the learner nothing moved.
+        let ratio = view.strength_at_level / view.total_at_level as f64;
+        writeln!(
+            out,
+            "  {}  {}/{} solid at this level",
+            bar(style, ratio),
+            view.solid_at_level,
+            view.total_at_level
+        )?;
+    }
+    if view.snippets_seen == 0 {
+        writeln!(out)?;
+        writeln!(
+            out,
+            "{}",
+            style.dim("nothing annotated yet — `readcode` starts you on the first snippet")
+        )?;
+        return Ok(());
+    }
+
+    writeln!(out)?;
+    writeln!(
+        out,
+        "  {} of {} snippets seen · {}",
+        view.snippets_seen,
+        view.snippets_total,
+        match view.new_at_level {
+            0 => "nothing new at your level".to_string(),
+            1 => "1 new at your level".to_string(),
+            many => format!("{many} new at your level"),
+        }
+    )?;
+    writeln!(
+        out,
+        "  {}",
+        match (view.due_now, view.next_due) {
+            (0, Some(next)) => format!("nothing due now · next review {}", describe_due(now, next)),
+            (0, None) => "nothing due — every concept is scheduled".to_string(),
+            (many, _) => format!("{many} due now"),
+        }
+    )?;
+
+    writeln!(out)?;
+    if view.needs_work.is_empty() {
+        writeln!(
+            out,
+            "{}",
+            style.dim("nothing needs work: every concept is solid and scheduled")
+        )?;
+        return Ok(());
+    }
+
+    writeln!(out, "{}", style.bold("needs work"))?;
+    const SHOWN: usize = 8;
+    for state in view.needs_work.iter().take(SHOWN) {
+        let (group, leaf) = match state.id.rsplit_once('.') {
+            Some((group, leaf)) => (group, leaf),
+            None => ("", state.id.as_str()),
+        };
+        writeln!(
+            out,
+            "  {:<32} {}  {}",
+            format!("{group}.{leaf}"),
+            bar(style, state.strength),
+            describe_due(now, state.due_at)
+        )?;
+    }
+    if view.needs_work.len() > SHOWN {
+        writeln!(
+            out,
+            "  {}",
+            style.dim(&format!(
+                "and {} more — `readcode` works through them as they come due",
+                view.needs_work.len() - SHOWN
+            ))
+        )?;
+    }
+    writeln!(
+        out,
+        "  {}",
+        style.dim(&format!(
+            "{} concept{} solid in total",
+            view.solid,
+            plural(view.solid)
+        ))
+    )?;
+    Ok(())
+}
+
+fn plural(count: usize) -> &'static str {
+    if count == 1 { "" } else { "s" }
+}
+
 pub fn order_for_status(states: Vec<ConceptState>, now: u64) -> Vec<ConceptState> {
     let mut groups: std::collections::BTreeMap<String, Vec<ConceptState>> =
         std::collections::BTreeMap::new();
@@ -412,6 +547,89 @@ pub fn print_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rendered(view: &ProgressView<'_>) -> String {
+        let mut out: Vec<u8> = Vec::new();
+        print_progress(&mut out, Style::new(false), view, 1_000).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    fn view<'a>(_states: &'a [ConceptState], needs_work: Vec<ConceptState>) -> ProgressView<'a> {
+        ProgressView {
+            level: Some(2),
+            level_name: "small functions",
+            solid_at_level: 2,
+            total_at_level: 8,
+            strength_at_level: 3.2,
+            snippets_seen: 3,
+            snippets_total: 9,
+            new_at_level: 4,
+            due_now: 1,
+            next_due: Some(5_000),
+            needs_work,
+            solid: 2,
+        }
+    }
+
+    #[test]
+    fn progress_leads_with_the_level_the_bar_and_what_is_due() {
+        let mut state = ConceptState::new("rust.binding.mut");
+        state.strength = 0.4;
+        state.due_at = 900;
+        let states = vec![state.clone()];
+        let screen = rendered(&view(&states, vec![state]));
+
+        assert!(screen.contains("level 2 · small functions"), "{screen}");
+        assert!(screen.contains("2/8 solid at this level"), "{screen}");
+        // 3.2 of 8 is 40%, so the bar is not empty even though nothing is mastered.
+        assert!(screen.contains("40%"), "{screen}");
+        assert!(screen.contains("3 of 9 snippets seen"), "{screen}");
+        assert!(screen.contains("4 new at your level"), "{screen}");
+        assert!(screen.contains("1 due now"), "{screen}");
+        assert!(screen.contains("rust.binding.mut"), "{screen}");
+        assert!(screen.contains("2 concepts solid in total"), "{screen}");
+    }
+
+    #[test]
+    fn a_silent_rung_says_so_instead_of_showing_an_empty_table() {
+        let screen = rendered(&view(&[], Vec::new()));
+        assert!(screen.contains("nothing needs work"), "{screen}");
+    }
+
+    #[test]
+    fn a_fresh_profile_is_told_what_to_do() {
+        let empty = ProgressView {
+            level: Some(1),
+            level_name: "just started",
+            solid_at_level: 0,
+            total_at_level: 6,
+            strength_at_level: 0.0,
+            snippets_seen: 0,
+            snippets_total: 9,
+            new_at_level: 2,
+            due_now: 0,
+            next_due: None,
+            needs_work: Vec::new(),
+            solid: 0,
+        };
+        let screen = rendered(&empty);
+        assert!(screen.contains("nothing annotated yet"), "{screen}");
+        assert!(!screen.contains("needs work"), "{screen}");
+    }
+
+    #[test]
+    fn a_long_needs_work_list_is_capped() {
+        let states: Vec<ConceptState> = (0..12)
+            .map(|index| {
+                let mut state = ConceptState::new(&format!("rust.thing.{index}"));
+                state.strength = 0.2;
+                state.due_at = 500;
+                state
+            })
+            .collect();
+        let screen = rendered(&view(&states, states.clone()));
+        assert!(screen.contains("and 4 more"), "{screen}");
+    }
     use crate::corpus::Corpus;
     use crate::snippet::Asks;
 
