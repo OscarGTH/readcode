@@ -178,23 +178,34 @@ impl Grade {
                 continue;
             };
 
-            let concepts: Vec<(String, Verdict)> = prompt
-                .concepts
-                .iter()
-                .map(|concept| {
-                    let verdict = raw_prompt
-                        .concepts
-                        .get(concept)
-                        .map(|label| Verdict::from_label(label))
-                        .unwrap_or_else(|| Verdict::from_label(&raw_prompt.verdict));
-                    (concept.clone(), verdict)
-                })
-                .collect();
+            // A prompt may list more concepts than the annotation can address.
+            // Omitted concepts were not asked of this prompt, so they are not
+            // graded here — only an explicit verdict (or a prompt-level verdict
+            // with no per-concept detail at all) counts.
+            let concepts: Vec<(String, Verdict)> = if raw_prompt.concepts.is_empty() {
+                prompt
+                    .concepts
+                    .iter()
+                    .map(|concept| (concept.clone(), Verdict::from_label(&raw_prompt.verdict)))
+                    .collect()
+            } else {
+                raw_prompt
+                    .concepts
+                    .iter()
+                    .filter(|(concept, _)| prompt.concepts.contains(concept))
+                    .map(|(concept, label)| (concept.clone(), Verdict::from_label(label)))
+                    .collect()
+            };
 
             let mut verdict = Verdict::from_label(&raw_prompt.verdict);
             if raw_prompt.verdict.trim().is_empty() {
                 let only: Vec<Verdict> = concepts.iter().map(|(_, verdict)| *verdict).collect();
-                verdict = combine(&only);
+                // Nothing graded and no prompt verdict: nothing to say about it.
+                verdict = if only.is_empty() {
+                    Verdict::Unknown
+                } else {
+                    combine(&only)
+                };
             }
 
             graded.push(PromptGrade {
@@ -350,6 +361,53 @@ concepts = ["rust.binding"]
         assert_eq!(prompts.len(), 1, "the lone brace is not asked");
         let raw = parse_json_object(r#"{"prompts":[]}"#).unwrap();
         assert!(Grade::from_raw(&prompts, raw, "test").is_err());
+    }
+
+    #[test]
+    fn a_concept_the_reviewer_omitted_is_not_graded() {
+        // Two concepts, one addressed by the answer: the other must not be
+        // invented as `unknown`, or the scheduler punishes a line for a concept
+        // that belongs to a sibling line.
+        let snippet = Snippet::parse(
+            r#"id = "t-4"
+language = "rust"
+title = "two concepts"
+code = '''
+let a = 1;
+'''
+[[blocks]]
+lines = [1, 1]
+ask = "what happens?"
+concepts = ["rust.a", "rust.b"]
+"#,
+        )
+        .unwrap();
+        let prompts = snippet.prompts(Asks::Blocks);
+        let grade = grade(
+            &prompts,
+            r#"{"prompts":[{"prompt":1,"verdict":"correct","concepts":{"rust.a":"correct"}}]}"#,
+        );
+        assert_eq!(
+            grade.prompts[0].concepts,
+            vec![("rust.a".to_string(), Verdict::Correct)]
+        );
+        assert_eq!(
+            grade.concept_verdicts(),
+            vec![("rust.a".to_string(), Verdict::Correct)]
+        );
+    }
+
+    #[test]
+    fn an_invented_concept_id_is_ignored() {
+        let prompts = prompts(Asks::Blocks);
+        let grade = grade(
+            &prompts,
+            r#"{"prompts":[{"prompt":1,"verdict":"correct","concepts":{"rust.invented":"correct","rust.binding":"correct"}}]}"#,
+        );
+        assert_eq!(
+            grade.prompts[0].concepts,
+            vec![("rust.binding".to_string(), Verdict::Correct)]
+        );
     }
 
     #[test]

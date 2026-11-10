@@ -309,7 +309,12 @@ pub fn print_grade(
             writeln!(out, "    {}", graded.feedback)?;
         }
         for missing in &graded.missing {
-            writeln!(out, "    {} {}", style.yellow("!"), style.dim(missing))?;
+            writeln!(
+                out,
+                "    {} {}",
+                style.yellow("missed"),
+                style.dim(&format!("· {missing}"))
+            )?;
         }
     }
 

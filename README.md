@@ -8,7 +8,7 @@ then marks every concept you were supposed to name: correct, partial, wrong, or 
 Concepts you missed come back sooner. Duolingo, aimed at *reading* code instead of
 writing toy apps nobody needs.
 
-![A readcode sitting: a block of Rust, one question, and the answer typed beneath it](docs/asking.png)
+![A readcode sitting: a short Rust function with four notes written above their lines, the fifth question underneath, and the answer being typed](docs/tui.png)
 
 ## Install
 
@@ -54,20 +54,35 @@ Progress is saved between runs, so `readcode` is the same command every day.
 
 ## Using it
 
-Answer each question in your own words. A line containing only `.` finishes the answer;
-`:unknown` says you have no idea (that is a useful answer, not a failure); `:quit` stops
-without saving anything.
+The code fills the screen, you answer in your own words, and your answer lands **on the
+code**: each note appears above the line it explains, as a `//` comment, so the snippet
+turns into your own annotated copy as you go.
+
+- `Enter` submits an answer and moves to the next question
+- `Enter` on an empty answer skips that question (an honest "no idea" is fine)
+- `Ctrl-J` adds a newline when one sentence is not enough
+- `Ctrl-B` goes back and reopens the previous answer
+- `Esc` stops without saving anything
+
+When the last question is answered it grades you per concept and shows you the review —
+what was right, what was thin, and what you missed:
+
+![The review: a count of verdicts, then per prompt the concepts, the feedback and the missed points](docs/tui-review.png)
+
+`missed · …` is the reviewer naming something you did not mention. A concept the reviewer
+could not judge from that particular answer is left out entirely rather than marked
+"unknown" — a line is only asked to prove what it can show.
 
 ```sh
 readcode --snippet 002     # a specific snippet (id, or any unambiguous suffix)
 readcode --lines           # force line-by-line; --blocks forces the other way
+readcode --no-tui          # plain line-by-line view, for pipes and screenshots
 readcode check             # validate your own snippet files
 readcode reset --yes       # wipe progress and start over
 ```
 
-Then it grades you, per concept, and tells you what you missed:
-
-![The review: a verdict per prompt, a verdict per concept, and the correction for each miss](docs/review.png)
+With `--no-tui` (or when the output is piped) the same sitting runs as plain text: a line
+containing only `.` finishes an answer, `:unknown` says you have no idea, `:quit` stops.
 
 ### Blocks or lines
 
@@ -76,11 +91,8 @@ Comprehension and attention to detail are different skills, so the app asks both
 - **block by block** — one question per semantic block: "what does `shout` take, and what
   does it give back?"
 - **line by line** — one question per significant line, answered the way you would
-  annotate a file: a window of surrounding lines, the lines you have already explained
-  carrying your note above them as a `//` comment, and the current line marked. When the
-  last line is answered you get the whole snippet back, annotated.
-
-![Line mode: the previous note sitting above its line as a comment, the current line marked](docs/line-by-line.png)
+  annotate a file: the line being asked is marked, and the lines you have already
+  explained carry your note above them as a `//` comment.
 
 You do not choose: the first visit uses whatever the snippet is authored for, and the
 next visit to the same snippet **alternates** to the other mode. Same code, different
@@ -251,11 +263,10 @@ count lines by hand to find the off-by-one.
   graded from the code alone, which is looser.
 - **Reuse concept ids.** `rust.question_mark` across five snippets teaches the scheduler
   that this is one skill; five one-off ids teach it nothing.
-- **A line must carry only the concepts it demonstrates.** Without a `blocks.line` entry a
-  line inherits every concept of its block, so a block holding two ideas gets asked to prove
-  both on each of its lines — and a learner who splits the answer across two lines gets
-  `unknown` for the half the reviewer did not see on that line. Give each significant line
-  its own entry when a block's concepts split.
+- **A line inherits its block's concepts** unless it has its own `blocks.line` entry, and
+  then it is asked to prove all of them. If a block holds two ideas that land on different
+  lines, give each line its own `ask` and `concepts`, or the question on each line asks for
+  something that line cannot show.
 
 ## Evals
 
@@ -275,7 +286,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 95 tests, no network, no agent
+cargo test                        # 120 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs
@@ -286,15 +297,22 @@ on pull requests, and on demand; superseded runs on the same ref are cancelled s
 quick fixup does not spend the minutes twice. Model-backed evals stay manual, because
 they spend tokens.
 
-The screenshots in `docs/` are real captures, not mock-ups: `scripts/capture_terminal.py`
-runs a sitting under a PTY (so the typed answers are echoed by the tty) and
-`scripts/render_terminal.py` paints the captured ANSI into `docs/*.html`, which is then
-screenshotted in a browser. Regenerate them the same way if the layout changes.
+The screenshots in `docs/` are not mock-ups. The full-screen ones come from
+`examples/frame`, which feeds a real sitting through ratatui's test backend and hands the
+resulting cells to `scripts/render_frame.py` — the same `draw` call the terminal runs, so
+the frame is exact down to the cursor. The review frame is graded by a real agent, not by
+hand-written verdicts. The plain view is captured from a PTY by
+`scripts/capture_terminal.py` and painted by `scripts/render_terminal.py`. Regenerate with:
+
+```sh
+cargo run --quiet --example frame -- annotate /tmp/f.json
+python3 scripts/render_frame.py /tmp/f.json docs/tui.html "readcode"
+```
 
 ## Roadmap
 
 - [x] Line-by-line annotation alongside block mode
-- [ ] A ratatui TUI: syntax highlighting, arrow keys instead of prompts
+- [x] A ratatui view: the code on screen, notes written on it, arrow keys instead of prompts
 - [ ] More corpora: Python, TypeScript, Go, and "read your own repo" mode
 - [ ] A targeted follow-up question when a concept is unknown, not just a note
 - [ ] An MCP server so your agent can look up weak concepts while you work

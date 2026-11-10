@@ -12,6 +12,7 @@ use crate::review::{Annotation, Grade, Reviewer};
 use crate::snippet::{Asks, Snippet};
 use crate::srs::ConceptState;
 use crate::store::{Event, Progress};
+use crate::tui::{self, Action};
 use crate::ui::{self, Style};
 
 const HELP: &str = "your own words · `.` finishes · `:unknown` = no idea · `:quit` stops";
@@ -189,6 +190,95 @@ pub fn run(
     writeln!(term.out)?;
     ui::print_grade(term.out, style, &prompts, &grade)?;
 
+    let (concepts_touched, due_now) = commit(snippet, mode, &grade, progress, now, term)?;
+
+    Ok(Some(Outcome {
+        grade,
+        mode,
+        concepts_touched,
+        due_now,
+    }))
+}
+
+/// The interactive sitting: the code on screen with your notes written on it,
+/// one prompt at a time. Falls back to [`run`] when there is no terminal to
+/// drive.
+pub fn run_tui(
+    snippet: &Snippet,
+    mode: Asks,
+    reviewer: &dyn Reviewer,
+    progress: &mut Progress,
+    now: u64,
+    term: &mut Terminal<'_>,
+) -> Result<Option<Outcome>> {
+    let mode = snippet.resolve_mode(mode);
+    let prompts = snippet.prompts(mode);
+    if prompts.is_empty() {
+        bail!("snippet `{}` produced no prompts", snippet.id);
+    }
+
+    let mut app = tui::App::new(snippet, prompts, mode, reviewer.name());
+    // The guard restores the terminal when this block ends, including when
+    // grading returns an error.
+    let action = {
+        let mut guard = tui::Guard::enter()?;
+        loop {
+            guard.terminal().draw(|frame| tui::draw(frame, &app))?;
+            match app.on_key(guard.next_key()?) {
+                Action::Abort => break Action::Abort,
+                Action::Finish => break Action::Finish,
+                Action::None => {}
+                Action::Grade => {
+                    // Drawn before the call, because grading blocks for as long
+                    // as the agent takes.
+                    guard.terminal().draw(|frame| tui::draw(frame, &app))?;
+                    match reviewer.grade(snippet, &app.prompts, &app.annotations()) {
+                        Ok(grade) => app.finish(grade),
+                        Err(error) => app.fail(format!("{error:#}")),
+                    }
+                }
+            }
+        }
+    };
+
+    if action == Action::Abort {
+        writeln!(term.out)?;
+        writeln!(
+            term.out,
+            "{}",
+            term.style.dim("stopped — this snippet was not saved")
+        )?;
+        return Ok(None);
+    }
+
+    let Some(grade) = app.grade.take() else {
+        bail!(
+            "grading failed; nothing was saved: {}",
+            app.error.unwrap_or_else(|| "no grade returned".to_string())
+        );
+    };
+
+    let (concepts_touched, due_now) = commit(snippet, mode, &grade, progress, now, term)?;
+
+    Ok(Some(Outcome {
+        grade,
+        mode,
+        concepts_touched,
+        due_now,
+    }))
+}
+
+/// Folds a grade into progress and reports what changed. Shared by both views,
+/// so a sitting recorded through the TUI is indistinguishable from one recorded
+/// on the command line.
+fn commit(
+    snippet: &Snippet,
+    mode: Asks,
+    grade: &Grade,
+    progress: &mut Progress,
+    now: u64,
+    term: &mut Terminal<'_>,
+) -> Result<(usize, usize)> {
     let verdicts = grade.concept_verdicts();
     for (concept, verdict) in &verdicts {
         progress.concept_mut(concept).apply(*verdict, now);
@@ -223,7 +313,7 @@ pub fn run(
     writeln!(
         term.out,
         "{}",
-        style.dim(&format!(
+        term.style.dim(&format!(
             "saved — {} concept{} updated · {} prompt{} graded · {due_now} due for review now · `readcode status` for mastery",
             verdicts.len(),
             if verdicts.len() == 1 { "" } else { "s" },
@@ -232,12 +322,7 @@ pub fn run(
         ))
     )?;
 
-    Ok(Some(Outcome {
-        grade,
-        mode,
-        concepts_touched: verdicts.len(),
-        due_now,
-    }))
+    Ok((verdicts.len(), due_now))
 }
 
 /// Reads a multi-line annotation until a line that is exactly `.`.

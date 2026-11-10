@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
@@ -53,6 +53,10 @@ struct Cli {
     /// Disable ANSI colour.
     #[arg(long, global = true)]
     no_color: bool,
+
+    /// Use the plain line-by-line view instead of the full-screen one.
+    #[arg(long, global = true)]
+    no_tui: bool,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -162,14 +166,29 @@ fn main() -> Result<()> {
                 out: &mut out,
                 style,
             };
-            let outcome = session::run(
-                chosen,
-                mode,
-                reviewer.as_ref(),
-                &mut progress,
-                now,
-                &mut term,
-            )?;
+            // Full screen when there is a screen to fill, plain lines when the
+            // output is being piped somewhere.
+            let interactive =
+                !cli.no_tui && io::stdin().is_terminal() && io::stdout().is_terminal();
+            let outcome = if interactive {
+                session::run_tui(
+                    chosen,
+                    mode,
+                    reviewer.as_ref(),
+                    &mut progress,
+                    now,
+                    &mut term,
+                )?
+            } else {
+                session::run(
+                    chosen,
+                    mode,
+                    reviewer.as_ref(),
+                    &mut progress,
+                    now,
+                    &mut term,
+                )?
+            };
             if outcome.is_some() {
                 progress.save(&progress_path)?;
             }

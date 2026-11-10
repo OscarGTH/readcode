@@ -4,6 +4,9 @@
 //! comments and macros is ~200 lines, while pulling in a fully general highlighter
 //! would add seconds to every build on a small machine. It is a *display* pass —
 //! nothing here is used for grading.
+//!
+//! The lexer emits [`Token`]s and the painters turn them into either ANSI (the
+//! line-based view) or ratatui spans (the TUI), so there is one lexer, not two.
 
 use crate::ui::Style;
 
@@ -11,6 +14,21 @@ use crate::ui::Style;
 enum State {
     Normal,
     BlockComment,
+}
+
+/// What a piece of source text is, for colouring purposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Token {
+    Plain,
+    Keyword,
+    Type,
+    Function,
+    Macro,
+    String,
+    Number,
+    Comment,
+    Lifetime,
+    Attribute,
 }
 
 const TYPES: &[&str] = &[
@@ -25,32 +43,66 @@ const KEYWORDS: &[&str] = &[
     "where", "while", "yield",
 ];
 
-/// Highlights a run of source lines. Block comments are threaded across lines, so
-/// a `/* … */` that spans them is dimmed as one comment.
-pub fn highlight(lines: &[&str], style: Style) -> Vec<String> {
+/// The lines, split into (token, text) runs. Block comments are threaded across
+/// lines, so a `/* … */` that spans them is one comment.
+pub fn tokens(lines: &[&str]) -> Vec<Vec<(Token, String)>> {
     let mut state = State::Normal;
     lines
         .iter()
-        .map(|line| highlight_line(line, style, &mut state))
+        .map(|line| tokenize(line, &mut state))
         .collect()
 }
 
-fn highlight_line(line: &str, style: Style, state: &mut State) -> String {
-    let mut out = String::new();
-    let mut index = 0usize;
+/// The same, painted with ANSI escapes (or plain when colour is off).
+pub fn highlight(lines: &[&str], style: Style) -> Vec<String> {
+    tokens(lines)
+        .into_iter()
+        .map(|runs| {
+            runs.into_iter()
+                .map(|(token, text)| paint(token, &text, style))
+                .collect::<String>()
+        })
+        .collect()
+}
 
+fn paint(token: Token, text: &str, style: Style) -> String {
+    match token {
+        Token::Keyword | Token::Macro | Token::Attribute => style.magenta(text),
+        Token::Type => style.cyan(text),
+        Token::Function => style.blue(text),
+        Token::String => style.green(text),
+        Token::Number | Token::Lifetime => style.yellow(text),
+        Token::Comment => style.dim(text),
+        Token::Plain => text.to_string(),
+    }
+}
+
+fn tokenize(line: &str, state: &mut State) -> Vec<(Token, String)> {
+    let mut out: Vec<(Token, String)> = Vec::new();
+
+    let push = |out: &mut Vec<(Token, String)>, token: Token, text: &str| {
+        if text.is_empty() {
+            return;
+        }
+        match out.last_mut() {
+            Some((last, joined)) if *last == token => joined.push_str(text),
+            _ => out.push((token, text.to_string())),
+        }
+    };
+
+    let mut index = 0usize;
     while index < line.len() {
         let rest = &line[index..];
 
         if *state == State::BlockComment {
             match rest.find("*/") {
                 Some(offset) => {
-                    out.push_str(&style.dim(&rest[..offset + 2]));
+                    push(&mut out, Token::Comment, &rest[..offset + 2]);
                     index += offset + 2;
                     *state = State::Normal;
                 }
                 None => {
-                    out.push_str(&style.dim(rest));
+                    push(&mut out, Token::Comment, rest);
                     index = line.len();
                 }
             }
@@ -58,7 +110,7 @@ fn highlight_line(line: &str, style: Style, state: &mut State) -> String {
         }
 
         if rest.starts_with("//") {
-            out.push_str(&style.dim(rest));
+            push(&mut out, Token::Comment, rest);
             break;
         }
         if rest.starts_with("/*") {
@@ -69,7 +121,7 @@ fn highlight_line(line: &str, style: Style, state: &mut State) -> String {
         // Attributes: #[derive(Debug)] and #![allow(..)]
         if rest.starts_with('#') {
             if let Some(close) = rest.find(']') {
-                out.push_str(&style.magenta(&rest[..close + 1]));
+                push(&mut out, Token::Attribute, &rest[..close + 1]);
                 index += close + 1;
                 continue;
             }
@@ -77,21 +129,20 @@ fn highlight_line(line: &str, style: Style, state: &mut State) -> String {
 
         // Raw strings first: r"…", r#"…"#, br#"…"#
         if let Some(len) = raw_string_len(rest) {
-            out.push_str(&style.green(&rest[..len]));
+            push(&mut out, Token::String, &rest[..len]);
             index += len;
             continue;
         }
 
-        // Strings and chars.
         if rest.starts_with('"') {
             let len = quoted_len(rest, '"');
-            out.push_str(&style.green(&rest[..len]));
+            push(&mut out, Token::String, &rest[..len]);
             index += len;
             continue;
         }
         if rest.starts_with('\'') {
             if let Some(len) = char_literal_len(rest) {
-                out.push_str(&style.green(&rest[..len]));
+                push(&mut out, Token::String, &rest[..len]);
                 index += len;
                 continue;
             }
@@ -101,7 +152,7 @@ fn highlight_line(line: &str, style: Style, state: &mut State) -> String {
                 .find(|c: char| !(c.is_alphanumeric() || c == '_'))
                 .unwrap_or(body.len());
             let len = 1 + offset;
-            out.push_str(&style.yellow(&rest[..len]));
+            push(&mut out, Token::Lifetime, &rest[..len]);
             index += len;
             continue;
         }
@@ -112,7 +163,7 @@ fn highlight_line(line: &str, style: Style, state: &mut State) -> String {
             let len = rest
                 .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.'))
                 .unwrap_or(rest.len());
-            out.push_str(&style.yellow(&rest[..len]));
+            push(&mut out, Token::Number, &rest[..len]);
             index += len;
             continue;
         }
@@ -123,14 +174,14 @@ fn highlight_line(line: &str, style: Style, state: &mut State) -> String {
                 .unwrap_or(rest.len());
             let word = &rest[..len];
             let after = &rest[len..];
-            out.push_str(&classify(word, after, style));
+            push(&mut out, classify(word, after), word);
             index += len;
             continue;
         }
 
         let mut chars = rest.chars();
         if let Some(char_) = chars.next() {
-            out.push(char_);
+            push(&mut out, Token::Plain, &char_.to_string());
             index += char_.len_utf8();
         } else {
             break;
@@ -140,25 +191,22 @@ fn highlight_line(line: &str, style: Style, state: &mut State) -> String {
     out
 }
 
-fn classify(word: &str, after: &str, style: Style) -> String {
+fn classify(word: &str, after: &str) -> Token {
     if KEYWORDS.contains(&word) || word == "Self" {
         // `self` in a receiver is a value, but colouring it like a keyword reads
         // correctly either way.
-        return style.magenta(word);
+        return Token::Keyword;
     }
     if after.starts_with('!') {
-        return style.magenta(word); // macro: println!, vec!, matches!
+        return Token::Macro; // println!, vec!, matches!
     }
     if TYPES.contains(&word) || word.chars().next().is_some_and(char::is_uppercase) {
-        return style.cyan(word); // primitive, type, enum variant, trait
+        return Token::Type; // primitive, type, enum variant, trait
     }
     if after.starts_with('(') {
-        return style.blue(word); // function or method call
+        return Token::Function; // function or method call
     }
-    if word == "mut" || word == "dyn" {
-        return style.magenta(word);
-    }
-    word.to_string()
+    Token::Plain
 }
 
 /// `"…"` with escapes; returns the byte length including both quotes.
@@ -233,12 +281,41 @@ mod tests {
         highlight(&[line], Style::new(false)).remove(0)
     }
 
+    fn kinds(line: &str) -> Vec<(Token, String)> {
+        tokens(&[line]).remove(0)
+    }
+
     #[test]
-    fn keywords_types_and_calls_get_their_own_colours() {
+    fn keywords_types_and_calls_are_tokenised() {
+        let runs = kinds("fn hit(&mut self) -> bool { Counter::new() }");
+        assert!(
+            runs.contains(&(Token::Keyword, "fn".to_string())),
+            "{runs:?}"
+        );
+        assert!(
+            runs.contains(&(Token::Keyword, "mut".to_string())),
+            "{runs:?}"
+        );
+        assert!(
+            runs.contains(&(Token::Type, "bool".to_string())),
+            "{runs:?}"
+        );
+        assert!(
+            runs.contains(&(Token::Type, "Counter".to_string())),
+            "{runs:?}"
+        );
+        assert!(
+            runs.contains(&(Token::Function, "new".to_string())),
+            "{runs:?}"
+        );
+    }
+
+    #[test]
+    fn the_ansi_painter_colours_the_same_tokens() {
         let painted = paint("fn hit(&mut self) -> bool { Counter::new() }");
         assert!(painted.contains("\x1b[35mfn\x1b[0m"), "{painted}");
-        assert!(painted.contains("\x1b[35mmut\x1b[0m"), "{painted}");
         assert!(painted.contains("\x1b[36mCounter\x1b[0m"), "{painted}");
+        assert!(painted.contains("\x1b[34mnew\x1b[0m"), "{painted}");
     }
 
     #[test]
@@ -261,12 +338,21 @@ mod tests {
 
     #[test]
     fn a_lifetime_is_not_a_char_literal() {
-        let lifetime = paint("struct LogLine<'a> { level: &'static str }");
-        assert!(lifetime.contains("\x1b[33m'a\x1b[0m"), "{lifetime}");
-        assert!(lifetime.contains("\x1b[33m'static\x1b[0m"), "{lifetime}");
+        let runs = kinds("struct LogLine<'a> { level: &'static str }");
+        assert!(
+            runs.contains(&(Token::Lifetime, "'a".to_string())),
+            "{runs:?}"
+        );
+        assert!(
+            runs.contains(&(Token::Lifetime, "'static".to_string())),
+            "{runs:?}"
+        );
 
-        let char_ = paint("text.push('!');");
-        assert!(char_.contains("\x1b[32m'!'\x1b[0m"), "{char_}");
+        let char_ = kinds("text.push('!');");
+        assert!(
+            char_.contains(&(Token::String, "'!'".to_string())),
+            "{char_:?}"
+        );
     }
 
     #[test]
@@ -308,5 +394,17 @@ mod tests {
             Style::new(true),
         );
         assert!(lines[1].contains("\x1b[33m1\x1b[0m"), "{}", lines[1]);
+    }
+
+    #[test]
+    fn joining_tokens_back_together_reproduces_the_line() {
+        for line in [
+            "let loud = shout(name.clone());",
+            r#"println!("{loud} then {quiet}");"#,
+            "    *counts.entry(word).or_insert(0) += 1;",
+        ] {
+            let rebuilt: String = kinds(line).into_iter().map(|(_, text)| text).collect();
+            assert_eq!(rebuilt, line);
+        }
     }
 }

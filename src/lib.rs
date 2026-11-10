@@ -19,4 +19,5 @@ pub mod session;
 pub mod snippet;
 pub mod srs;
 pub mod store;
+pub mod tui;
 pub mod ui;

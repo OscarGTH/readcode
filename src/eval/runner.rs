@@ -299,6 +299,28 @@ pub fn run_case(
         }
     };
 
+    // A reviewer is allowed to leave a concept out (the answer never addressed
+    // it), but it may not leave out everything: that would satisfy every
+    // "never credits X" assertion while grading nothing.
+    if grade
+        .prompts
+        .iter()
+        .all(|prompt| prompt.concepts.is_empty())
+    {
+        let mut result = CaseResult::failed(
+            &case.id,
+            trial,
+            "the reviewer graded no concepts at all".to_string(),
+            duration_ms,
+        );
+        result.description = case.description.clone();
+        result.must_pass = case.must_pass;
+        result.mode = mode;
+        result.snippet = snippet.id.clone();
+        result.reviewer = reviewer.name();
+        return Ok(result);
+    }
+
     let mut failures = Vec::new();
     let mut passed_assertions = 0;
     for expectation in &case.expect {
@@ -394,24 +416,27 @@ fn judge(expectation: &Expectation, grade: &Grade, prompts: &[Prompt]) -> Result
             expectation.prompt
         );
     };
-    let actual = match &expectation.concept {
+    // A prompt may legitimately leave a concept ungraded: the annotation never
+    // addressed it. That cannot satisfy an exact assertion, and it cannot
+    // violate a prohibition either.
+    let graded = match &expectation.concept {
         Some(concept) => prompt
             .concepts
             .iter()
             .find(|(id, _)| id == concept)
-            .map(|(_, verdict)| *verdict)
-            .with_context(|| {
-                format!(
-                    "the reviewer did not grade `{concept}` on prompt {} (the snippet expects {:?})",
-                    expectation.prompt,
-                    prompts[prompt_number].concepts
-                )
-            })?,
-        None => prompt.verdict,
+            .map(|(_, verdict)| *verdict),
+        None => Some(prompt.verdict),
     };
-    match expectation.verdict.as_deref() {
-        Some(_) => Ok(actual == expectation.required()?),
-        None => Ok(!expectation.forbidden()?.contains(&actual)),
+    match (expectation.verdict.as_deref(), graded) {
+        (Some(_), Some(actual)) => Ok(actual == expectation.required()?),
+        (Some(_), None) => bail!(
+            "`{}` was not graded on prompt {} (the prompt offers {:?})",
+            expectation.concept.as_deref().unwrap_or("the prompt"),
+            expectation.prompt,
+            prompts[prompt_number].concepts
+        ),
+        (None, Some(actual)) => Ok(!expectation.forbidden()?.contains(&actual)),
+        (None, None) => Ok(true),
     }
 }
 

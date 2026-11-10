@@ -14,6 +14,7 @@ Rules:
 - Mark a concept "correct" only if the annotation actually says it — in its own words, with the right meaning. Restating the code is not explaining it.
 - "partial" means the idea is there but incomplete or imprecise. "wrong" means the annotation says something false or explains a different thing. "unknown" means the learner said they do not know, or left it blank.
 - A short, accurate answer for a single line is complete. Do not ask for more detail than the line needs.
+- Grade only the concepts the annotation actually addresses. If a prompt lists several concepts but the answer speaks to one of them, return an entry for that one and OMIT the others — an omitted concept means "not asked of this prompt", not "wrong". Use "unknown" only when the learner says they do not know, or leaves the answer blank.
 - Keep feedback to one or two sentences per prompt. Name the misconception, not the syntax.
 - Reply with TEXT ONLY. Do not call tools, do not create or edit files, do not run commands, do not request permissions.
 - Reply with a single JSON object and nothing else: no prose before or after it, no markdown code fences.
@@ -21,7 +22,7 @@ Rules:
 The JSON object has exactly this shape:
 {"prompts":[{"prompt":1,"verdict":"correct|partial|wrong|unknown","concepts":{"<concept id>":"correct|partial|wrong|unknown"},"missing":["short phrase"],"feedback":"one or two sentences"}],"summary":"one sentence for the whole snippet"}
 
-Emit one entry per prompt, in prompt order, using the prompt numbers given to you. `concepts` must use the exact concept ids given. `missing` lists what the learner failed to notice, as short phrases; leave it empty when nothing is missing.
+Emit one entry per prompt, in prompt order, using the prompt numbers given to you. `concepts` must use the exact concept ids given, and may contain fewer ids than the prompt lists. `missing` lists what the learner failed to notice, as short phrases — not the concept's definition, and not a restatement of the rubric; leave it empty when nothing is missing.
 "#;
 
 /// The grading request for one sitting. Everything a reviewer needs is here:
