@@ -57,6 +57,11 @@ impl Theme {
     fn hint() -> Style {
         Style::default().fg(Color::DarkGray)
     }
+    /// Every other entry gets this behind it. Subtle on purpose: it separates
+    /// blocks while scrolling, it does not decorate them.
+    fn band() -> Color {
+        Color::Rgb(21, 25, 33)
+    }
     fn focus() -> Style {
         Style::default().fg(Color::Black).bg(Color::LightGreen)
     }
@@ -413,10 +418,11 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
     }
     rows.push(Line::from(summary));
 
-    for graded in &grade.prompts {
+    for (entry, graded) in grade.prompts.iter().enumerate() {
         let Some(prompt) = app.prompts.get(graded.prompt) else {
             continue;
         };
+        let band_start = rows.len();
         rows.push(Line::raw(""));
         // The verdict sits on the first code row, so one prompt is one block
         // rather than a header followed by the code it describes.
@@ -451,51 +457,53 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
 
         // A correct answer needs no review and no lesson: the praise is noise,
         // and the lesson is for the lines that did not land.
-        if graded.verdict == Verdict::Correct {
-            continue;
-        }
-        let nuanced = graded
-            .concepts
-            .iter()
-            .any(|(_, verdict)| *verdict != graded.verdict);
-        if nuanced {
-            for (concept, verdict) in &graded.concepts {
-                rows.push(Line::from(vec![
-                    Span::styled("      ", Theme::hint()),
-                    Span::styled(format!("{concept:<30}"), Theme::dim()),
-                    Span::styled(verdict_name(*verdict).to_string(), Theme::verdict(*verdict)),
-                ]));
+        if graded.verdict != Verdict::Correct {
+            let nuanced = graded
+                .concepts
+                .iter()
+                .any(|(_, verdict)| *verdict != graded.verdict);
+            if nuanced {
+                for (concept, verdict) in &graded.concepts {
+                    rows.push(Line::from(vec![
+                        Span::styled(" ".repeat(LABEL_INDENT), Theme::hint()),
+                        Span::styled(format!("{concept:<30}"), Theme::dim()),
+                        Span::styled(verdict_name(*verdict).to_string(), Theme::verdict(*verdict)),
+                    ]));
+                }
+            }
+            if !graded.feedback.trim().is_empty() {
+                labelled(
+                    &mut rows,
+                    "review",
+                    graded.feedback.trim(),
+                    Theme::dim(),
+                    Style::default(),
+                    width,
+                );
+            }
+            if !graded.missing.is_empty() {
+                labelled(
+                    &mut rows,
+                    "missed",
+                    &graded.missing.join(" · "),
+                    Theme::verdict(Verdict::Partial),
+                    Theme::dim(),
+                    width,
+                );
+            }
+            if let Some(teach) = &graded.teach {
+                labelled(
+                    &mut rows,
+                    "why",
+                    teach,
+                    Theme::type_(),
+                    Style::default(),
+                    width,
+                );
             }
         }
-        if !graded.feedback.trim().is_empty() {
-            labelled(
-                &mut rows,
-                "review",
-                graded.feedback.trim(),
-                Theme::dim(),
-                Style::default(),
-                width,
-            );
-        }
-        if !graded.missing.is_empty() {
-            labelled(
-                &mut rows,
-                "missed",
-                &graded.missing.join(" · "),
-                Theme::verdict(Verdict::Partial),
-                Theme::dim(),
-                width,
-            );
-        }
-        if let Some(teach) = &graded.teach {
-            labelled(
-                &mut rows,
-                "why",
-                teach,
-                Theme::type_(),
-                Style::default(),
-                width,
-            );
+        if entry % 2 == 0 {
+            band(&mut rows[band_start..], width);
         }
     }
 
@@ -531,6 +539,26 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
             .scroll((scroll, 0)),
         area,
     );
+}
+
+/// Give a run of rows one background, all the way to the right edge — a band is
+/// only readable if it reaches the edge, and a Paragraph only paints the cells a
+/// span covers.
+fn band(rows: &mut [Line], width: usize) {
+    for line in rows {
+        let used: usize = line
+            .spans
+            .iter()
+            .map(|span| span.content.chars().count())
+            .sum();
+        line.style = line.style.bg(Theme::band());
+        if used < width {
+            line.spans.push(Span::styled(
+                " ".repeat(width - used),
+                Style::default().bg(Theme::band()),
+            ));
+        }
+    }
 }
 
 /// Where to read more: whatever the snippet author added, then one page per
@@ -608,6 +636,11 @@ fn code_rows(
 }
 
 /// One labelled paragraph: a dim label in a fixed column, then wrapped text.
+/// Where the text after a label starts: 4 spaces of margin plus an 8-wide label
+/// column. Shared by every row that lines up under the labels, so nothing sits a
+/// stray column away from its neighbours.
+const LABEL_INDENT: usize = 12;
+
 fn labelled(
     rows: &mut Vec<Line>,
     label: &str,
@@ -616,7 +649,7 @@ fn labelled(
     text_style: Style,
     width: usize,
 ) {
-    let indent = 13usize;
+    let indent = LABEL_INDENT;
     for (index, piece) in wrap(text, width.saturating_sub(indent).max(20))
         .into_iter()
         .enumerate()
@@ -969,6 +1002,58 @@ mod tests {
         assert!(!screen.contains("Spot on"), "{screen}");
         assert!(!screen.contains("why"), "{screen}");
         assert!(!screen.contains("review  "), "{screen}");
+    }
+
+    #[test]
+    fn every_other_entry_is_banded_right_to_the_edge() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("006").unwrap();
+        let mut app = app_with_answer(snippet);
+        let grade = Grade {
+            reviewer: "acp:opencode".into(),
+            summary: String::new(),
+            prompts: vec![
+                PromptGrade {
+                    prompt: 0,
+                    verdict: Verdict::Correct,
+                    concepts: vec![(app.prompts[0].concepts[0].clone(), Verdict::Correct)],
+                    feedback: String::new(),
+                    missing: vec![],
+                    teach: None,
+                },
+                PromptGrade {
+                    prompt: 1,
+                    verdict: Verdict::Correct,
+                    concepts: vec![(app.prompts[1].concepts[0].clone(), Verdict::Correct)],
+                    feedback: String::new(),
+                    missing: vec![],
+                    teach: None,
+                },
+            ],
+        };
+        app.finish(grade);
+
+        let width = 96u16;
+        let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
+        terminal.draw(|frame| draw(frame, &app)).unwrap();
+        let buffer = terminal.backend().buffer().clone();
+
+        // Find the two code rows, then read the background of their last cell.
+        let mut code_rows = Vec::new();
+        for y in 0..buffer.area.height {
+            let mut row = String::new();
+            for x in 0..buffer.area.width {
+                row.push_str(buffer[(x, y)].symbol());
+            }
+            if row.contains("│ fn main()") || row.contains("│     let") {
+                code_rows.push(y);
+            }
+        }
+        assert_eq!(code_rows.len(), 2, "expected two entries");
+        let first = buffer[(width - 1, code_rows[0])].bg;
+        let second = buffer[(width - 1, code_rows[1])].bg;
+        assert_eq!(first, Theme::band(), "the first entry is banded");
+        assert_eq!(second, Color::Reset, "the second is not");
     }
 
     #[test]
