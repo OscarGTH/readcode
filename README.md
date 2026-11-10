@@ -28,11 +28,23 @@ review · acp:opencode
 
 ## Install
 
+macOS or Linux, via Homebrew. It builds from source, so it takes about a minute and
+pulls in nothing you keep afterwards:
+
+```sh
+brew install OscarGTH/tap/readcode
+```
+
+Anywhere with a Rust toolchain:
+
 ```sh
 cargo install --git https://github.com/OscarGTH/readcode
 ```
 
 Or from a clone: `cargo build --release`, then run `target/release/readcode`.
+
+The snippet corpus is compiled into the binary, so a single executable is the whole
+install — no data files, no network at runtime unless you choose a model or agent.
 
 ## Quick start
 
@@ -247,6 +259,11 @@ cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs
 ```
+
+CI (`.github/workflows/ci.yml`) runs those four steps on **every push, on any branch**,
+on pull requests, and on demand; superseded runs on the same ref are cancelled so a
+quick fixup does not spend the minutes twice. Model-backed evals stay manual, because
+they spend tokens.
 
 ## Roadmap
 
