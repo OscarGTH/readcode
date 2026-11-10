@@ -1,0 +1,78 @@
+id = "rust-003"
+language = "rust"
+title = "Iterator adaptors: a filter/map/collect chain"
+source = "idiomatic Rust over a slice of records"
+intro = "Chains read as a pipeline, but nothing runs until the end. Annotate where the work actually happens."
+
+code = '''
+#[derive(Debug)]
+struct LogLine {
+    level: &'static str,
+    message: String,
+}
+
+fn errors(lines: &[LogLine]) -> Vec<String> {
+    lines
+        .iter()
+        .filter(|line| line.level == "ERROR")
+        .map(|line| line.message.clone())
+        .collect()
+}
+'''
+
+[[blocks]]
+lines = [1, 6]
+ask = "What does `derive(Debug)` generate, and why is `level` a `&'static str` while `message` is a `String`?"
+concepts = ["rust.struct", "rust.derive", "rust.lifetime.static"]
+  [[blocks.expects]]
+  concept = "rust.struct"
+  keywords = ["struct", "fields", "named", "record", "data type"]
+  note = "A struct groups named fields into one type; each field has its own type."
+
+  [[blocks.expects]]
+  concept = "rust.derive"
+  keywords = ["derive", "generate", "implement", "macro", "debug impl"]
+  note = "`#[derive(Debug)]` generates `impl Debug for LogLine`, which is what `{:?}` needs."
+
+  [[blocks.expects]]
+  concept = "rust.lifetime.static"
+  keywords = ["static", "lifetime", "lives forever", "whole program", "literals"]
+  note = "`&'static str` borrows text that lives for the whole program — string literals are exactly that; `String` is owned instead, because the message is built at runtime."
+
+[[blocks]]
+lines = [7, 10]
+ask = "What is `&[LogLine]` as a parameter, and what does `filter` do to the chain before `map` runs?"
+concepts = ["rust.slice", "rust.iterator.lazy", "rust.closure"]
+  [[blocks.expects]]
+  concept = "rust.slice"
+  keywords = ["slice", "borrow", "view", "does not own", "reference", "length"]
+  note = "`&[LogLine]` is a borrowed view of a contiguous run of records: no copy, no ownership transfer, and it works with arrays and `Vec`s alike."
+
+  [[blocks.expects]]
+  concept = "rust.iterator.lazy"
+  keywords = ["lazy", "nothing", "not run", "only when", "consumed", "on demand", "chain"]
+  note = "Adaptors are lazy: nothing is filtered or mapped until a consumer (`collect`) drives the iterator."
+
+  [[blocks.expects]]
+  concept = "rust.closure"
+  keywords = ["closure", "anonymous", "inline function", "|", "capture"]
+  note = "`|line| ...` is an anonymous function; here it borrows `level` and `message` through `line`."
+
+[[blocks]]
+lines = [11, 13]
+ask = "What type does `collect` produce, and why is `clone` needed inside `map`?"
+concepts = ["rust.iterator.adaptor", "rust.collect", "rust.ownership.clone"]
+  [[blocks.expects]]
+  concept = "rust.iterator.adaptor"
+  keywords = ["map", "transform", "each element", "adaptor", "one to one"]
+  note = "`map` transforms each surviving element; `filter` and `map` are adaptors that return a new iterator, not a collection."
+
+  [[blocks.expects]]
+  concept = "rust.collect"
+  keywords = ["collect", "vec", "gather", "consume", "turbofish", "annotat", "return type"]
+  note = "`collect` consumes the iterator into a collection; here the return type `Vec<String>` tells it what to build."
+
+  [[blocks.expects]]
+  concept = "rust.ownership.clone"
+  keywords = ["clone", "copy", "borrow", "cannot move", "owned", "duplicate"]
+  note = "`lines` is borrowed, so the `String` inside cannot be moved out — `clone` allocates a new owned `String` per kept line."

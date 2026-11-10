@@ -1,0 +1,93 @@
+id = "rust-004"
+language = "rust"
+title = "A struct with behaviour: impl, &mut self and a loop"
+source = "the shape of most small Rust types"
+intro = "State plus methods plus a loop. Say who is allowed to mutate what."
+
+code = '''
+#[derive(Default)]
+struct Counter {
+    hits: u32,
+}
+
+impl Counter {
+    fn hit(&mut self) -> bool {
+        self.hits += 1;
+        self.hits >= 3
+    }
+}
+
+fn main() {
+    let mut counter = Counter::default();
+    while !counter.hit() {
+        println!("{} hit(s)", counter.hits);
+    }
+}
+'''
+
+[[blocks]]
+lines = [1, 5]
+ask = "What does `derive(Default)` give this type, and how many bytes does a `Counter` occupy?"
+concepts = ["rust.struct", "rust.derive", "rust.type.u32"]
+  [[blocks.expects]]
+  concept = "rust.struct"
+  keywords = ["struct", "fields", "type", "named", "group"]
+  note = "`Counter` is a named type with a single field, `hits`."
+
+  [[blocks.expects]]
+  concept = "rust.derive"
+  keywords = ["derive", "default", "generate", "impl", "zero"]
+  note = "`#[derive(Default)]` generates `impl Default for Counter`, which yields `Counter { hits: 0 }`."
+
+  [[blocks.expects]]
+  concept = "rust.type.u32"
+  keywords = ["u32", "unsigned", "32", "integer", "no sign", "4 bytes"]
+  note = "`u32` is an unsigned 32-bit integer: no negative values, and the struct's size is just that field's four bytes."
+
+[[blocks]]
+lines = [6, 11]
+ask = "What does `&mut self` let `hit` do, and what does it return on the last line?"
+concepts = ["rust.impl", "rust.mut_self", "rust.return.bool", "rust.operator.compound"]
+  [[blocks.expects]]
+  concept = "rust.impl"
+  keywords = ["impl", "method", "associated", "attach", "inherent"]
+  note = "`impl Counter` attaches methods to the type; `Counter::default()` and `counter.hit()` both come from impls."
+
+  [[blocks.expects]]
+  concept = "rust.mut_self"
+  keywords = ["mut self", "mutable", "borrow", "exclusive", "can change", "caller"]
+  note = "`&mut self` takes an exclusive borrow of the value, which is the only way a method may write to `self.hits` — and it forces the caller's binding to be `mut`."
+
+  [[blocks.expects]]
+  concept = "rust.return.bool"
+  keywords = ["bool", "true", "false", "returns", "tail", "comparison", "no return keyword"]
+  note = "The last expression `self.hits >= 3` is the return value; there is no `return` keyword and no semicolon."
+
+  [[blocks.expects]]
+  concept = "rust.operator.compound"
+  keywords = ["+=", "add", "compound", "increment", "assignment"]
+  note = "`+=` is compound assignment: read `hits`, add one, write it back — the same as `self.hits = self.hits + 1`."
+
+[[blocks]]
+lines = [12, 18]
+ask = "Why must `counter` be `mut`, and what does `!counter.hit()` mean to the loop?"
+concepts = ["rust.binding.mut", "rust.loop.while", "rust.method.call", "rust.operator.not"]
+  [[blocks.expects]]
+  concept = "rust.binding.mut"
+  keywords = ["mut", "mutable", "because", "&mut self", "requires", "binding"]
+  note = "`hit` takes `&mut self`, so the binding must be `let mut`; `Default::default()` cannot be called on an immutable binding here."
+
+  [[blocks.expects]]
+  concept = "rust.loop.while"
+  keywords = ["while", "condition", "loop", "recheck", "body", "false"]
+  note = "`while` evaluates the condition before each iteration and stops when it is `false`."
+
+  [[blocks.expects]]
+  concept = "rust.method.call"
+  keywords = ["method", "call", "dot", "receiver", "hit("]
+  note = "`counter.hit()` calls the inherent method with `&mut counter` as the receiver; the return value is used directly as the condition."
+
+  [[blocks.expects]]
+  concept = "rust.operator.not"
+  keywords = ["not", "negat", "!", "invert", "flip"]
+  note = "`!` inverts the `bool`: the loop keeps running while `hit()` returns `false`."

@@ -1,0 +1,31 @@
+[package]
+name = "readcode"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Learn a programming language by annotating real code, then get graded on it."
+license = "MIT"
+repository = "https://github.com/OscarGTH/readcode"
+readme = "README.md"
+keywords = ["learning", "education", "spaced-repetition", "acp", "llm"]
+categories = ["command-line-utilities", "education"]
+
+[[bin]]
+name = "readcode"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true

@@ -1,0 +1,71 @@
+id = "rust-001"
+language = "rust"
+title = "Ownership: moving a String into a function"
+source = "adapted from The Rust Book, ch. 4.1"
+intro = "Every non-trivial Rust function moves or borrows a value. Say what each block does to the data."
+
+code = '''
+fn shout(mut text: String) -> String {
+    text.push('!');
+    text
+}
+
+fn main() {
+    let name = String::from("ferris");
+    let loud = shout(name.clone());
+    let quiet = shout(name);
+    println!("{loud} then {quiet}");
+}
+'''
+
+[[blocks]]
+lines = [1, 5]
+ask = "What does `shout` take, what may it do with it, and what does it give back?"
+concepts = ["rust.ownership.param", "rust.mut.param", "rust.ownership.return"]
+  [[blocks.expects]]
+  concept = "rust.ownership.param"
+  keywords = ["takes ownership", "takes text", "moves", "move", "owned", "by value", "consumes"]
+  note = "`String` is not `Copy`, so passing it by value hands ownership to `shout`, which now owns that buffer."
+
+  [[blocks.expects]]
+  concept = "rust.mut.param"
+  keywords = ["mut", "mutable", "modify", "push"]
+  note = "`mut text` makes the binding mutable inside this function only; it grants nothing to the caller."
+
+  [[blocks.expects]]
+  concept = "rust.ownership.return"
+  keywords = ["returns", "hands back", "gives back", "moves out", "ownership back", "tail", "last expression"]
+  note = "The tail expression `text` returns the value, moving ownership back to the caller."
+
+[[blocks]]
+lines = [6, 7]
+ask = "Where does this String live, and can `name` be changed afterwards?"
+concepts = ["rust.heap.string", "rust.binding.immutable"]
+  [[blocks.expects]]
+  concept = "rust.heap.string"
+  keywords = ["heap", "allocat", "owned", "grow", "not a literal", "utf-8 buffer"]
+  note = "`String::from` allocates a growable buffer on the heap and the binding owns it; a `&str` would only borrow one."
+
+  [[blocks.expects]]
+  concept = "rust.binding.immutable"
+  keywords = ["immutable", "cannot change", "not mutable", "can't mutate", "bind"]
+  note = "`let name` is immutable — the value behind it cannot be mutated without `mut`, though it can still be moved."
+
+[[blocks]]
+lines = [8, 11]
+ask = "Why is `name` used twice, and which of the two calls is legal?"
+concepts = ["rust.ownership.clone", "rust.ownership.move", "rust.format.capture"]
+  [[blocks.expects]]
+  concept = "rust.ownership.clone"
+  keywords = ["clone", "copy", "duplicate", "deep copy", "second string"]
+  note = "`name.clone()` allocates a second owned `String`, which is why `name` is still usable on the next line."
+
+  [[blocks.expects]]
+  concept = "rust.ownership.move"
+  keywords = ["move", "moved", "no longer valid", "cannot use", "can't use", "invalid"]
+  note = "The second call moves `name`; touching `name` after line 9 would not compile."
+
+  [[blocks.expects]]
+  concept = "rust.format.capture"
+  keywords = ["format", "capture", "inline", "println", "interpolat", "display"]
+  note = "`{loud}` and `{quiet}` capture locals by name instead of passing positional arguments."
