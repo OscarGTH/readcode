@@ -7,11 +7,10 @@ know" as `unknown` is behaviour no unit test pins down — a prompt edit or a mo
 swap can change it without touching a line of Rust.
 
 ```sh
-cargo run -- eval                      # offline rubric, deterministic, free
-cargo run -- eval --target mock         # harness self-check
-cargo run -- eval --target acp          # your own agent, ~10 s per case
+cargo run -- eval                      # the mock: harness self-check, free
+cargo run -- eval --target acp         # your own agent, ~10 s per case
 cargo run -- eval --target api --model gpt-4o-mini
-cargo run -- eval --filter line-level   # one case or tag
+cargo run -- eval --filter line-level  # one case or tag
 ```
 
 Exit code is non-zero when a `must_pass` case fails or the score is below
@@ -65,21 +64,21 @@ count. Write it from the transcript that failed.
   this is red, the runner is broken, not the model. The unit test
   `a_contrarian_mock_fails_every_case` flips every mock answer and requires the
   whole suite to go red, so "all green" cannot be a scoring bug.
-- `local` — the offline keyword rubric. Deterministic, so it is a real
-  regression guard; `cargo test` asserts it stays above its baseline.
 - `api` / `acp` — a real reviewer. Costs tokens and minutes: run it when you
-  change the contract, the rubric, or the model.
+  change the contract, the notes, or the model. These are the only targets that
+  measure grading quality; there is deliberately no keyword fallback to compare
+  against, because one could not credit a paraphrase.
 
 ## Baselines
 
 Measured on this corpus, 2026-11-10, one trial each:
 
-- `local`: **0.83** — 5/6 cases, 10/15 assertions. It fails `credits-a-paraphrase`
-  by design: keyword matching cannot credit wording it does not know. Everything
-  in `must_pass` passes.
 - `acp` (opencode 1.19.5, `deepseek/deepseek-v4-pro`): **1.00** — 6/6 cases,
-  15/15 assertions, 9–12 s per case. Each case spawns one agent process, so cost
+  15/15 assertions, 9–15 s per case. Each case spawns one agent process, so cost
   is per case; batch into fewer cases before making the suite much bigger.
+- The same run scored 1.00 both before and after the corpus format dropped its
+  keyword rubrics and kept only per-concept `notes`, which is the evidence that
+  the notes carry the grading.
 
 Quote the model with the number, or the number means nothing. Re-run both after
 a contract change and compare case by case, not by the average.

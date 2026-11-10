@@ -6,8 +6,8 @@
 //! * [`snippet`] — the corpus format and its validation rules.
 //! * [`srs`] — per-concept mastery and scheduling ("what should I see next").
 //! * [`store`] — the progress file.
-//! * [`review`] — the grading contract and its three backends: a deterministic
-//!   offline rubric, a BYOK HTTP client, and an ACP-hosted agent.
+//! * [`review`] — the grading contract and its two backends: a BYOK HTTP client
+//!   and an ACP-hosted agent.
 //! * [`session`] — one run: pick a snippet, collect annotations, grade, schedule.
 //! * [`ui`] — terminal rendering.
 

@@ -3,7 +3,6 @@
 //! A sitting is a list of [`Prompt`]s — blocks or single lines. Reviewers only
 //! ever see prompts, so line mode and block mode use the same grading path.
 //!
-//! * [`local`] — deterministic keyword rubric, always available, no model.
 //! * [`api`] — BYOK HTTP client for OpenAI- or Anthropic-compatible endpoints.
 //! * [`acp`] — hosts the user's own coding agent over the Agent Client Protocol,
 //!   so grading runs on the agent/subscription they already pay for.
@@ -11,7 +10,6 @@
 pub mod acp;
 pub mod api;
 pub mod contract;
-pub mod local;
 
 use std::collections::BTreeMap;
 

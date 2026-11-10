@@ -291,7 +291,59 @@ impl Rng {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::review::local::LocalReviewer;
+    use crate::review::{Grade, PromptGrade};
+    use crate::srs::Verdict;
+
+    /// Grades like a cooperative model: anything the learner actually explains
+    /// is correct, "I don't know" and blanks are unknown. That is all these
+    /// tests need — the real grading quality is measured by `evals/`.
+    struct EchoReviewer;
+
+    impl Reviewer for EchoReviewer {
+        fn name(&self) -> String {
+            "echo".to_string()
+        }
+
+        fn grade(
+            &self,
+            _snippet: &Snippet,
+            prompts: &[crate::snippet::Prompt],
+            annotations: &[Annotation],
+        ) -> Result<Grade> {
+            let graded = prompts
+                .iter()
+                .enumerate()
+                .map(|(index, prompt)| {
+                    let said = annotations
+                        .iter()
+                        .find(|annotation| annotation.prompt == index)
+                        .map(|annotation| annotation.text.to_lowercase())
+                        .unwrap_or_default();
+                    let verdict = if said.trim().is_empty() || said.contains("don't know") {
+                        Verdict::Unknown
+                    } else {
+                        Verdict::Correct
+                    };
+                    PromptGrade {
+                        prompt: index,
+                        verdict,
+                        feedback: String::new(),
+                        missing: Vec::new(),
+                        concepts: prompt
+                            .concepts
+                            .iter()
+                            .map(|concept| (concept.clone(), verdict))
+                            .collect(),
+                    }
+                })
+                .collect();
+            Ok(Grade {
+                reviewer: self.name(),
+                prompts: graded,
+                summary: String::new(),
+            })
+        }
+    }
 
     fn corpus() -> Corpus {
         Corpus::builtin().unwrap()
@@ -312,21 +364,13 @@ mod tests {
             out: &mut out,
             style: Style::new(false),
         };
-        let outcome = run(snippet, mode, &LocalReviewer, progress, now, &mut term);
+        let outcome = run(snippet, mode, &EchoReviewer, progress, now, &mut term);
         (outcome, String::from_utf8_lossy(&out).to_string())
     }
 
-    /// Annotations built from the rubric itself: a reviewer must credit them.
-    fn rubric_stdin(snippet: &Snippet, mode: Asks) -> String {
-        let mut stdin = String::new();
-        for prompt in snippet.prompts(mode) {
-            for expect in &prompt.expects {
-                stdin.push_str(&expect.keywords.join(", "));
-                stdin.push('\n');
-            }
-            stdin.push_str(".\n");
-        }
-        stdin
+    /// One short answer per prompt, each finished with `.`.
+    fn answers(snippet: &Snippet, mode: Asks, text: &str) -> String {
+        format!("{text}\n.\n").repeat(snippet.prompts(mode).len())
     }
 
     #[test]
@@ -335,7 +379,7 @@ mod tests {
         let snippet = corpus.find("002").unwrap();
         let prompts = snippet.prompts(Asks::Blocks);
         let mut progress = Progress::default();
-        let stdin = rubric_stdin(snippet, Asks::Blocks);
+        let stdin = answers(snippet, Asks::Blocks, "an explanation");
 
         let (result, _) = sitting(snippet, Asks::Blocks, &mut progress, 1_000_000, stdin);
         let outcome = result.unwrap().expect("a finished sitting");
@@ -375,7 +419,7 @@ mod tests {
         );
 
         let mut progress = Progress::default();
-        let stdin = rubric_stdin(snippet, Asks::Lines);
+        let stdin = answers(snippet, Asks::Lines, "an explanation");
         let (result, screen) = sitting(snippet, Asks::Lines, &mut progress, 2_000_000, stdin);
         let outcome = result.unwrap().expect("a finished sitting");
 

@@ -1,13 +1,11 @@
 //! A snippet is a short piece of real code plus the ground truth we grade
 //! against.
 //!
-//! Authoring is semantic: a snippet is a list of [`Block`]s, each with the
-//! concepts a learner must name. Asking is finer-grained: the same snippet can
-//! be asked as blocks (comprehension) or as single lines (attention to detail),
-//! and a block may carry [`LinePrompt`]s for the lines that deserve their own
-//! question and rubric.
+//! Authoring is deliberately thin: a snippet is code plus blocks, each with the
+//! concepts a learner must name. `notes` and `blocks.line` are optional and only
+//! there to make grading sharper.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -43,6 +41,7 @@ impl Asks {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Snippet {
     pub id: String,
     pub language: String,
@@ -61,22 +60,26 @@ pub struct Snippet {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Block {
     /// `[start, end]`, 1-based and inclusive.
     pub lines: Vec<usize>,
-    /// The question shown when this block is asked as a whole.
+    /// Defaults to a generic question; a specific one grades better.
+    #[serde(default = "default_ask")]
     pub ask: String,
     pub concepts: Vec<String>,
-    /// Keyword rubric used by the offline reviewer, and the ground truth the
-    /// model-backed reviewers are given so they grade against something specific.
+    /// Optional ground truth per concept: what a correct answer has to say.
+    /// The reviewer is shown these, so they are the difference between "grade
+    /// this from the code" and "grade it against a rubric".
     #[serde(default)]
-    pub expects: Vec<Expect>,
+    pub notes: BTreeMap<String, String>,
     /// Lines inside this block that are asked on their own in line mode.
     #[serde(default)]
     pub line: Vec<LinePrompt>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LinePrompt {
     /// The line this prompt is about.
     pub at: usize,
@@ -86,17 +89,13 @@ pub struct LinePrompt {
     /// Defaults to the owning block's concepts.
     #[serde(default)]
     pub concepts: Vec<String>,
-    /// Defaults to the owning block's expectations, filtered to the concepts.
+    /// Defaults to the owning block's notes, for these concepts.
     #[serde(default)]
-    pub expects: Vec<Expect>,
+    pub notes: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct Expect {
-    pub concept: String,
-    pub keywords: Vec<String>,
-    #[serde(default)]
-    pub note: String,
+fn default_ask() -> String {
+    "Explain what this block does, in your own words.".to_string()
 }
 
 /// One unit of asking and grading: a block, or a single line.
@@ -108,7 +107,8 @@ pub struct Prompt {
     pub end: usize,
     pub ask: String,
     pub concepts: Vec<String>,
-    pub expects: Vec<Expect>,
+    /// Ground truth per concept, when the corpus says something about it.
+    pub notes: BTreeMap<String, String>,
     /// The source lines this prompt covers, for display.
     pub lines: Vec<String>,
 }
@@ -209,7 +209,7 @@ impl Snippet {
                     end,
                     ask: block.ask.clone(),
                     concepts: block.concepts.clone(),
-                    expects: block.expects.clone(),
+                    notes: block.notes.clone(),
                     lines: self.slice(start, end),
                 })
             })
@@ -234,13 +234,13 @@ impl Snippet {
                     .map(|prompt| prompt.concepts.clone())
                     .filter(|concepts| !concepts.is_empty())
                     .unwrap_or_else(|| block.concepts.clone());
-                let expects = match authored {
-                    Some(prompt) if !prompt.expects.is_empty() => prompt.expects.clone(),
+                let notes = match authored {
+                    Some(prompt) if !prompt.notes.is_empty() => prompt.notes.clone(),
                     _ => block
-                        .expects
+                        .notes
                         .iter()
-                        .filter(|expect| concepts.contains(&expect.concept))
-                        .cloned()
+                        .filter(|(concept, _)| concepts.contains(concept))
+                        .map(|(concept, note)| (concept.clone(), note.clone()))
                         .collect(),
                 };
                 let ask = authored
@@ -252,7 +252,7 @@ impl Snippet {
                     end: line,
                     ask,
                     concepts,
-                    expects,
+                    notes,
                     lines: self.slice(line, line),
                 });
             }
@@ -282,8 +282,8 @@ impl Snippet {
     }
 
     /// Rejects a snippet we cannot grade honestly: uncovered lines, overlapping
-    /// blocks, a concept with no expectation attached, a line prompt outside its
-    /// block.
+    /// blocks, a concept with no id, a note about a concept the block does not
+    /// declare, a line prompt outside its block.
     pub fn validate(&self) -> Result<()> {
         if self.id.trim().is_empty() {
             bail!("snippet has an empty id");
@@ -326,7 +326,7 @@ impl Snippet {
                 );
             }
             if block.ask.trim().is_empty() {
-                bail!("snippet `{}` block {n}: has no `ask`", self.id);
+                bail!("snippet `{}` block {n}: has an empty `ask`", self.id);
             }
             if block.concepts.is_empty() {
                 bail!(
@@ -334,22 +334,8 @@ impl Snippet {
                     self.id
                 );
             }
-            for expect in &block.expects {
-                if !block.concepts.contains(&expect.concept) {
-                    bail!(
-                        "snippet `{}` block {n}: expectation for `{}` which is not one of the block's concepts",
-                        self.id,
-                        expect.concept
-                    );
-                }
-                if expect.keywords.is_empty() {
-                    bail!(
-                        "snippet `{}` block {n}: expectation for `{}` has no keywords",
-                        self.id,
-                        expect.concept
-                    );
-                }
-            }
+            check_concepts_and_notes(&self.id, n, &block.concepts, &block.notes, "the block")?;
+
             for prompt in &block.line {
                 if prompt.at < start || prompt.at > end {
                     bail!(
@@ -392,24 +378,13 @@ impl Snippet {
                 } else {
                     &prompt.concepts
                 };
-                for expect in &prompt.expects {
-                    if !concepts.contains(&expect.concept) {
-                        bail!(
-                            "snippet `{}` block {n}: line {} expectation for `{}` which is not one of the line's concepts",
-                            self.id,
-                            prompt.at,
-                            expect.concept
-                        );
-                    }
-                    if expect.keywords.is_empty() {
-                        bail!(
-                            "snippet `{}` block {n}: line {} expectation for `{}` has no keywords",
-                            self.id,
-                            prompt.at,
-                            expect.concept
-                        );
-                    }
-                }
+                check_concepts_and_notes(
+                    &self.id,
+                    n,
+                    concepts,
+                    &prompt.notes,
+                    &format!("line {}", prompt.at),
+                )?;
             }
             last_end = end;
         }
@@ -439,6 +414,44 @@ impl Snippet {
 
         Ok(())
     }
+
+    /// The code with line numbers, so a bad range is easy to fix.
+    pub fn numbered_code(&self) -> String {
+        let width = self.line_count().to_string().len().max(2);
+        self.code_lines()
+            .iter()
+            .enumerate()
+            .map(|(index, line)| format!("{:>width$} | {line}", index + 1))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+fn check_concepts_and_notes(
+    snippet: &str,
+    block: usize,
+    concepts: &[String],
+    notes: &BTreeMap<String, String>,
+    where_: &str,
+) -> Result<()> {
+    for concept in concepts {
+        if concept.trim().is_empty() {
+            bail!("snippet `{snippet}` block {block}: has an empty concept id");
+        }
+    }
+    for (concept, note) in notes {
+        if !concepts.contains(concept) {
+            bail!(
+                "snippet `{snippet}` block {block}: a note for `{concept}` on {where_}, but the concepts there are {concepts:?}"
+            );
+        }
+        if note.trim().is_empty() {
+            bail!(
+                "snippet `{snippet}` block {block}: the note for `{concept}` on {where_} is empty; drop it instead"
+            );
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -456,11 +469,7 @@ let b = 2;
 
 [[blocks]]
 lines = [1, 1]
-ask = "what is a?"
 concepts = ["rust.binding"]
-  [[blocks.expects]]
-  concept = "rust.binding"
-  keywords = ["binding", "bound"]
 
 [[blocks]]
 lines = [2, 2]
@@ -484,27 +493,17 @@ count += 1;
 lines = [1, 1]
 ask = "what is count?"
 concepts = ["rust.binding.mut"]
-  [[blocks.expects]]
-  concept = "rust.binding.mut"
-  keywords = ["mut", "mutable"]
-  note = "`mut` allows the value to change."
 
 [[blocks]]
 lines = [2, 3]
 ask = "what happens here?"
 concepts = ["rust.operator.compound"]
-  [[blocks.expects]]
-  concept = "rust.operator.compound"
-  keywords = ["+=", "add"]
-  note = "`+=` reads, adds and writes back."
+notes = { "rust.operator.compound" = "`+=` reads, adds and writes back." }
   [[blocks.line]]
   at = 2
   ask = "Why is there an equals sign in `+=`?"
   concepts = ["rust.operator.compound"]
-    [[blocks.line.expects]]
-    concept = "rust.operator.compound"
-    keywords = ["+=", "assign"]
-    note = "`+=` assigns the sum back to the same binding."
+  notes = { "rust.operator.compound" = "`+=` assigns the sum back to the same binding." }
 "#;
 
     #[test]
@@ -514,6 +513,17 @@ concepts = ["rust.operator.compound"]
         assert_eq!(snippet.span(1).unwrap(), (2, 2));
         assert_eq!(snippet.concepts().len(), 1);
         snippet.validate().unwrap();
+    }
+
+    #[test]
+    fn ask_is_optional_and_notes_are_optional() {
+        let snippet = Snippet::parse(OK).unwrap();
+        assert_eq!(
+            snippet.blocks[0].ask,
+            "Explain what this block does, in your own words."
+        );
+        assert_eq!(snippet.blocks[1].ask, "what is b?");
+        assert!(snippet.blocks[0].notes.is_empty());
     }
 
     #[test]
@@ -543,10 +553,16 @@ concepts = ["rust.operator.compound"]
         let snippet = Snippet::parse(WITH_LINES).unwrap();
         let prompts = snippet.prompts(Asks::Lines);
         assert_eq!(prompts[1].ask, "Why is there an equals sign in `+=`?");
-        assert_eq!(prompts[1].expects.len(), 1);
-        // The unauthored line falls back to a generic question and the block rubric.
+        assert_eq!(
+            prompts[1]
+                .notes
+                .get("rust.operator.compound")
+                .map(String::as_str),
+            Some("`+=` assigns the sum back to the same binding.")
+        );
+        // The unauthored line keeps a generic question and its block's notes.
         assert_eq!(prompts[0].ask, "What does line 1 do?");
-        assert_eq!(prompts[0].expects.len(), 1);
+        assert!(prompts[0].notes.is_empty());
     }
 
     #[test]
@@ -566,6 +582,17 @@ concepts = ["rust.operator.compound"]
     }
 
     #[test]
+    fn rejects_a_note_about_a_concept_the_block_does_not_declare() {
+        let text = WITH_LINES.replace(
+            r#"notes = { "rust.operator.compound" = "`+=` reads, adds and writes back." }"#,
+            r#"notes = { "rust.other" = "nope" }"#,
+        );
+        let snippet = Snippet::parse(&text).unwrap();
+        let err = snippet.validate().unwrap_err().to_string();
+        assert!(err.contains("but the concepts there are"), "{err}");
+    }
+
+    #[test]
     fn rejects_a_line_prompt_outside_its_block() {
         let text = WITH_LINES.replace("at = 2", "at = 7");
         let snippet = Snippet::parse(&text).unwrap();
@@ -576,12 +603,23 @@ concepts = ["rust.operator.compound"]
     #[test]
     fn rejects_a_line_prompt_for_a_concept_the_block_does_not_declare() {
         let text = WITH_LINES.replace(
-            "  concepts = [\"rust.operator.compound\"]\n    [[blocks.line.expects]]",
-            "  concepts = [\"rust.other\"]\n    [[blocks.line.expects]]",
+            "  concepts = [\"rust.operator.compound\"]\n  notes",
+            "  concepts = [\"rust.other\"]\n  notes",
         );
         let snippet = Snippet::parse(&text).unwrap();
         let err = snippet.validate().unwrap_err().to_string();
         assert!(err.contains("which the block does not declare"), "{err}");
+    }
+
+    #[test]
+    fn rejects_an_empty_note() {
+        let text = WITH_LINES.replace(
+            r#"notes = { "rust.operator.compound" = "`+=` reads, adds and writes back." }"#,
+            r#"notes = { "rust.operator.compound" = "  " }"#,
+        );
+        let snippet = Snippet::parse(&text).unwrap();
+        let err = snippet.validate().unwrap_err().to_string();
+        assert!(err.contains("is empty; drop it instead"), "{err}");
     }
 
     #[test]
@@ -605,21 +643,28 @@ concepts = ["rust.operator.compound"]
     }
 
     #[test]
-    fn rejects_expectation_for_unknown_concept() {
-        let text = OK.replace(
-            "concept = \"rust.binding\"\n  keywords",
-            "concept = \"rust.other\"\n  keywords",
-        );
-        let snippet = Snippet::parse(&text).unwrap();
-        let err = snippet.validate().unwrap_err().to_string();
-        assert!(err.contains("not one of the block's concepts"), "{err}");
-    }
-
-    #[test]
     fn rejects_a_block_past_the_code() {
         let text = OK.replace("lines = [2, 2]", "lines = [2, 9]");
         let snippet = Snippet::parse(&text).unwrap();
         let err = snippet.validate().unwrap_err().to_string();
         assert!(err.contains("exceeds"), "{err}");
+    }
+
+    #[test]
+    fn unknown_fields_are_an_error_not_a_silent_ignore() {
+        // A corpus written for 0.2 still carries `expects`; it must not load
+        // quietly with its rubric silently dropped.
+        let text = OK.replace(
+            "concepts = [\"rust.binding\"]\n\n[[blocks]]",
+            "concepts = [\"rust.binding\"]\nexpects = []\n\n[[blocks]]",
+        );
+        let err = Snippet::parse(&text).unwrap_err().to_string();
+        assert!(err.contains("unknown field"), "{err}");
+    }
+
+    #[test]
+    fn numbered_code_lines_up_with_the_ranges() {
+        let snippet = Snippet::parse(OK).unwrap();
+        assert_eq!(snippet.numbered_code(), " 1 | let a = 1;\n 2 | let b = 2;");
     }
 }

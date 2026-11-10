@@ -48,6 +48,14 @@ install — no data files, no network at runtime unless you choose a model or ag
 
 ## Quick start
 
+Point it at a reviewer once (see [Choosing a reviewer](#choosing-a-reviewer)):
+
+```sh
+export READCODE_AGENT="opencode acp"   # or: export READCODE_API_KEY=sk-...
+```
+
+Then everyday:
+
 ```sh
 readcode            # annotate the snippet that is most due
 readcode status     # what you have mastered, what is due
@@ -90,14 +98,16 @@ progress.
 
 ## Choosing a reviewer
 
+Grading needs a model, so the first run needs one of two things set up:
+
 | `--reviewer` | Needs | What you get |
 |---|---|---|
-| `local` | nothing | offline keyword matching; instant and free, but it cannot credit an idea phrased differently |
-| `api` | one API key | a model grades against the same rubric, one HTTP call |
-| `acp` | an ACP agent on your machine | your own agent and subscription do the grading; no API key |
+| `acp` | an ACP agent on your machine | your own agent and subscription grade; no API key |
+| `api` | one API key | a model grades over one HTTP call |
 
-Auto-detection prefers a configured agent, then an API key, then the offline reviewer.
-`READCODE_REVIEWER=acp` sets it permanently.
+Auto-detection uses a configured agent first, then a key. With neither, `readcode`
+stops and tells you which exports to set — `status`, `list` and `check` work either way.
+`READCODE_REVIEWER=acp` makes the choice permanent.
 
 **With an API key** (OpenAI- or Anthropic-compatible, including local servers):
 
@@ -132,14 +142,12 @@ readcode --corpus ~/my-snippets check      # validate before you study
 Files are found recursively, so `~/my-snippets/rust/*.toml` and
 `~/my-snippets/python/*.toml` both work. One snippet per file; the `id` must be unique.
 
-### A minimal snippet
+### The smallest snippet that works
 
 ```toml
 id = "rust-001"
 language = "rust"
 title = "Ownership: moving a String into a function"
-source = "adapted from The Rust Book, ch. 4.1"
-intro = "Say what each block does to the data."
 
 code = '''
 fn shout(mut text: String) -> String {
@@ -150,72 +158,83 @@ fn shout(mut text: String) -> String {
 
 [[blocks]]
 lines = [1, 4]
-ask = "What does `shout` take, and what does it give back?"
-concepts = ["rust.ownership.param", "rust.mut.param", "rust.ownership.return"]
-  [[blocks.expects]]
-  concept = "rust.ownership.param"
-  keywords = ["takes ownership", "moved", "by value", "consumes"]
-  note = "`String` is not `Copy`: passing it by value hands ownership to `shout`."
-
-  [[blocks.expects]]
-  concept = "rust.mut.param"
-  keywords = ["mut", "mutable", "modify"]
-  note = "`mut text` makes the binding writable inside this function only."
-
-  [[blocks.expects]]
-  concept = "rust.ownership.return"
-  keywords = ["returns", "hands back", "tail"]
-  note = "The tail expression returns `text`, moving ownership back to the caller."
+concepts = ["rust.ownership.param", "rust.ownership.return"]
 ```
 
-### Fields
+That is a complete snippet: the code, one block covering lines 1-4, and the two concepts you
+have to name. `readcode check` accepts it, block mode asks "explain what this block does",
+and a reviewer grades the answer.
 
-Snippet:
+### Sharpening it — all optional
 
-- `id` — unique, and what `--snippet` matches. Prefix by language: `rust-001`.
-- `language`, `title` — shown in the header. `title` is also searched by `--snippet`.
-- `code` — the snippet itself, in a TOML literal string (`'''`). Line numbers are 1-based.
-- `source`, `intro` — optional. Where the code came from, and one line of framing.
-- `asks` — optional: `"blocks"`, `"lines"`, or `"auto"` (default). `auto` asks lines if
-  the snippet has line-level questions below, otherwise blocks.
+Two fields make grading more specific. Add them where they earn it, skip them where they
+do not.
 
-Blocks — every line of `code` must belong to exactly one block:
+```toml
+source = "adapted from The Rust Book, ch. 4.1"
+intro = "Say what each block does to the data."
 
-- `lines = [start, end]` — 1-based, inclusive, in order, no gaps.
-- `ask` — the question the learner sees for that block.
-- `concepts = [...]` — what the learner must name. This is the unit of progress, not the
-  snippet: mastery and scheduling are tracked per concept, so reuse the same id whenever
-  the same idea appears in another snippet. Namespace them (`rust.ownership.move`).
-- `expects` — one entry per concept: `keywords` for the offline reviewer and `note`, the
-  correction shown when the concept is missed. Write the note as the thing you would say
-  to a colleague; the model reviewers use it as the ground truth too.
+[[blocks]]
+lines = [1, 4]
+ask = "What does `shout` take, and what does it give back?"
+concepts = ["rust.ownership.param", "rust.mut.param", "rust.ownership.return"]
+notes = { "rust.ownership.param" = "`String` is not `Copy`: passing it by value hands ownership to `shout`.", "rust.mut.param" = "`mut text` makes the binding writable inside this function only.", "rust.ownership.return" = "The tail expression returns `text`, moving ownership back to the caller." }
+```
 
-Line-level questions — optional, and what makes a snippet good in line mode:
+- `ask` — the question the learner sees. Without it they get a generic one.
+- `notes` — the ground truth per concept: what a correct answer has to say. The reviewer is
+  shown these, so it grades against your rubric instead of guessing at the code. One line,
+  only for the concepts that need it.
+
+### Asking about single lines
+
+In line mode every significant line is asked on its own (blank lines and lone braces are
+skipped). To give one line its own question and note:
 
 ```toml
   [[blocks.line]]
   at = 2
   ask = "Why is `mut` on the parameter, and who does it help?"
   concepts = ["rust.mut.param"]
-    [[blocks.line.expects]]
-    concept = "rust.mut.param"
-    keywords = ["mut", "mutable", "modify"]
-    note = "`mut text` makes the binding writable inside this function only."
+  notes = { "rust.mut.param" = "`mut text` makes the binding writable inside this function only." }
 ```
 
-- `at` is a single line inside the owning block. `ask` and `concepts` default to the
-  block's; `expects` defaults to the block's rubric filtered to those concepts.
-- Lines without a `blocks.line` entry still get a generic "what does line N do?" in line
-  mode, using the block's concepts. Blank lines and lone braces are never asked.
+- `at` is a single line inside the owning block. `ask`, `concepts` and `notes` all default to
+  the block's, so `at` alone is a valid entry.
+- A line without one still gets "What does line N do?", graded against the block's concepts.
+
+### Field reference
+
+Snippet:
+
+- `id` — unique; `--snippet` matches it, or its title. Prefix by language: `rust-001`.
+- `language`, `title` — shown in the header.
+- `code` — the code, in a TOML literal string (`'''`). Line numbers are 1-based.
+- `source`, `intro` — optional: provenance, and one line of framing.
+- `asks` — optional: `"blocks"`, `"lines"` or `"auto"` (default: lines if the snippet has
+  `blocks.line` entries, otherwise blocks).
+
+Block:
+
+- `lines = [start, end]` — 1-based, inclusive, in order, no gaps.
+- `concepts` — what the learner must name. This is the unit of progress, not the snippet:
+  mastery and scheduling are per concept, so reuse the same id wherever the idea appears.
+  Namespace them (`rust.ownership.move`).
+- `ask` — optional question for the block.
+- `notes` — optional map of concept → ground truth for that concept.
+- `line` — optional `[[blocks.line]]` entries, as above.
 
 ### Rules `readcode check` enforces
 
 - every code line belongs to exactly one block, in order, no gaps or overlaps
-- every block has an `ask` and at least one concept, and every concept has an `expects`
-  entry with at least one keyword
-- line questions sit inside their block, are not duplicated, and only use concepts the
-  block declares
+- every block has at least one concept, and no empty ids
+- a `notes` key has to be a concept declared on that block (or line) — this is what catches
+  a typo in a concept id
+- line questions sit inside their block, are not duplicated, and only use the block's concepts
 - ids are unique across the corpus
+
+When a range is wrong, `readcode check` prints the snippet with line numbers, so you never
+count lines by hand to find the off-by-one.
 
 ### Tips for snippets worth studying
 
@@ -224,26 +243,23 @@ Line-level questions — optional, and what makes a snippet good in line mode:
 - **6–15 lines, 2–4 blocks.** Long enough to be real, short enough to finish in one
   sitting.
 - **One idea per block.** If a block needs two unrelated concepts, it is two blocks.
-- **Keywords name ideas, not syntax.** `"takes ownership"`, `"early return"`,
-  `"allocates on the heap"` — not `"String"` or `"?"`, which appear everywhere and credit
-  nothing.
 - **Write the note as the correction.** If you cannot state what the learner should have
-  said in one sentence, the concept is too vague to grade.
+  said in one sentence, the concept is too vague to grade — and a concept with no note is
+  graded from the code alone, which is looser.
 - **Reuse concept ids.** `rust.question_mark` across five snippets teaches the scheduler
   that this is one skill; five one-off ids teach it nothing.
 - **A generic line inherits the block's concepts.** If a line does not serve them (a lone
-  `Ok(())`, a plain `}`), give it its own `blocks.line` entry, or it will be asked a
-  question its block's rubric cannot answer.
+  `Ok(())`, a plain `}`), give it its own `blocks.line` entry, or it gets asked a question
+  its block's concepts cannot answer.
 
 ## Evals
 
 Grading can regress without any Rust test failing, so it has its own suite:
 
 ```sh
-cargo run -- eval                     # offline rubric, deterministic
-cargo run -- eval --target mock       # prove the harness itself
-cargo run -- eval --target acp        # your own agent (~10 s per case)
-cargo run -- eval --target api        # BYOK
+cargo run -- eval                 # deterministic mock: proves the harness itself
+cargo run -- eval --target acp    # your own agent (~10 s per case)
+cargo run -- eval --target api    # BYOK
 ```
 
 Cases live in `evals/cases/` as one TOML file per behaviour — a misconception must never
@@ -254,7 +270,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 89 tests, no network, no agent
+cargo test                        # 84 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

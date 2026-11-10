@@ -702,9 +702,6 @@ let x = 1;
 lines = [1, 1]
 ask = "what is x?"
 concepts = ["rust.binding"]
-  [[blocks.expects]]
-  concept = "rust.binding"
-  keywords = ["binding"]
 "#;
 
     const CHUNKS: [&str; 3] = [

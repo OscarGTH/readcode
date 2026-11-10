@@ -24,60 +24,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 lines = [1, 3]
 ask = "What does `use` do, and why is the error type a `Box<dyn Error>` rather than a concrete error?"
 concepts = ["rust.use.import", "rust.error.dynamic"]
-  [[blocks.expects]]
-  concept = "rust.use.import"
-  keywords = ["import", "bring", "scope", "shortcut", "alias", "so that fs"]
-  note = "`use` brings `std::fs` into scope so the body can write `fs::` instead of `std::fs::`."
-
-  [[blocks.expects]]
-  concept = "rust.error.dynamic"
-  keywords = ["box", "dynamic", "trait object", "erased", "any error", "different error types", "unsized"]
-  note = "`Box<dyn Error>` erases the concrete type behind a pointer, so an `io::Error` and a `ParseIntError` both fit the same return type."
+notes = { "rust.use.import" = "`use` brings `std::fs` into scope so the body can write `fs::` instead of `std::fs::`.", "rust.error.dynamic" = "`Box<dyn Error>` erases the concrete type behind a pointer, so an `io::Error` and a `ParseIntError` both fit the same return type." }
 
 [[blocks]]
 lines = [4, 7]
 ask = "What does each `?` do on success and on failure, and who owns the `&str`?"
 concepts = ["rust.question_mark", "rust.error.from", "rust.borrow.str_param", "rust.result.ok"]
-  [[blocks.expects]]
-  concept = "rust.question_mark"
-  keywords = ["early return", "return", "propagat", "bubble", "match", "unwraps"]
-  note = "`?` matches: `Ok` unwraps and continues, `Err` returns from the function — it is a `match`, not a panic."
-
-  [[blocks.expects]]
-  concept = "rust.error.from"
-  keywords = ["from", "conver", "convert", "into", "boxes", "?"]
-  note = "`?` also calls `From::from` on the error, which is where `io::Error` becomes `Box<dyn Error>`."
-
-  [[blocks.expects]]
-  concept = "rust.borrow.str_param"
-  keywords = ["borrow", "reference", "&str", "does not own", "slice", "no copy"]
-  note = "`&str` is a borrowed view of text the caller owns: no allocation and no transfer of ownership."
-
-  [[blocks.expects]]
-  concept = "rust.result.ok"
-  keywords = ["ok(", "wrap", "success", "returns", "unit"]
-  note = "`Ok(port)` wraps the parsed number in `Ok` so the return type is satisfied."
+notes = { "rust.question_mark" = "`?` matches: `Ok` unwraps and continues, `Err` returns from the function — it is a `match`, not a panic.", "rust.error.from" = "`?` also calls `From::from` on the error, which is where `io::Error` becomes `Box<dyn Error>`.", "rust.borrow.str_param" = "`&str` is a borrowed view of text the caller owns: no allocation and no transfer of ownership.", "rust.result.ok" = "`Ok(port)` wraps the parsed number in `Ok` so the return type is satisfied." }
 
 [[blocks]]
 lines = [8, 13]
 ask = "Can `main` return an error, and what does the caller see when it does?"
 concepts = ["rust.main.result", "rust.question_mark", "rust.return.ok", "rust.exit.code"]
-  [[blocks.expects]]
-  concept = "rust.main.result"
-  keywords = ["main", "result", "termination", "allowed", "returns"]
-  note = "`main` may return `Result<(), E>`: the `Termination` trait turns it into an exit status."
-
-  [[blocks.expects]]
-  concept = "rust.question_mark"
-  keywords = ["propagat", "early return", "?", "bubble", "error"]
-  note = "The second `?` propagates a failure from `read_port` out of `main` instead of handling it here."
-
-  [[blocks.expects]]
-  concept = "rust.return.ok"
-  keywords = ["ok(", "unit", "no value", "success", "empty"]
-  note = "`Ok(())` is the success value of `Result<(), _>`: a unit value meaning 'no data'."
-
-  [[blocks.expects]]
-  concept = "rust.exit.code"
-  keywords = ["exit", "non-zero", "status", "code", "1", "debug", "stderr"]
-  note = "An `Err` escaping `main` prints the error's `Debug` to stderr and exits with a failure status."
+notes = { "rust.main.result" = "`main` may return `Result<(), E>`: the `Termination` trait turns it into an exit status.", "rust.question_mark" = "The second `?` propagates a failure from `read_port` out of `main` instead of handling it here.", "rust.return.ok" = "`Ok(())` is the success value of `Result<(), _>`: a unit value meaning 'no data'.", "rust.exit.code" = "An `Err` escaping `main` prints the error's `Debug` to stderr and exits with a failure status." }

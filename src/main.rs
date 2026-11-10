@@ -5,7 +5,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use readcode::corpus::Corpus;
-use readcode::review::{Reviewer, acp::AcpReviewer, api::ApiReviewer, local::LocalReviewer};
+use readcode::review::{Reviewer, acp::AcpReviewer, api::ApiReviewer};
 use readcode::session;
 use readcode::snippet::Asks;
 use readcode::srs::{self, ConceptState};
@@ -17,15 +17,11 @@ use readcode::ui::{self, Style};
     name = "readcode",
     version,
     about = "Learn a language by annotating real code, then get graded on it.",
-    long_about = "readcode shows you real code block by block, asks you to explain each block, and \
-grades your annotations. Concepts you miss come back sooner. Grading runs offline (keyword \
-rubric), against a BYOK API key, or through your own coding agent over ACP."
+    long_about = "readcode shows you real code block by block or line by line, asks you to explain \
+each part, and grades your annotations. Concepts you miss come back sooner. Grading runs on a \
+BYOK API key or through your own coding agent over ACP."
 )]
 struct Cli {
-    /// Grade offline with the keyword rubric, even when a key or agent exists.
-    #[arg(long, global = true)]
-    offline: bool,
-
     /// Which reviewer grades you (default: auto-detect).
     #[arg(long, global = true, value_enum)]
     reviewer: Option<Backend>,
@@ -64,8 +60,6 @@ struct Cli {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 enum Backend {
-    /// Deterministic keyword rubric, no model, no network.
-    Local,
     /// OpenAI- or Anthropic-compatible endpoint with your own key (BYOK).
     Api,
     /// Your own coding agent over the Agent Client Protocol (`opencode acp`).
@@ -77,8 +71,6 @@ enum EvalTarget {
     /// Deterministic mock: answers from the case's own expectations, so it only
     /// proves the harness.
     Mock,
-    /// The offline keyword rubric.
-    Local,
     /// A BYOK API key.
     Api,
     /// Your own agent over ACP (spends tokens).
@@ -97,8 +89,8 @@ enum Command {
     Check,
     /// Run the grading eval suite (see evals/).
     Eval {
-        /// Which reviewer to measure.
-        #[arg(long, value_enum, default_value_t = EvalTarget::Local)]
+        /// Which reviewer to measure (default: the deterministic mock).
+        #[arg(long, value_enum, default_value_t = EvalTarget::Mock)]
         target: EvalTarget,
         /// Case directory.
         #[arg(long, value_name = "DIR", default_value = "evals/cases")]
@@ -148,16 +140,7 @@ fn main() -> Result<()> {
                     .context("the corpus is empty — `--corpus <dir>` to load some")?,
             };
 
-            let backend = choose_backend(&cli);
-            if backend == Backend::Local {
-                eprintln!(
-                    "{}",
-                    style.dim(
-                        "grading offline with the keyword rubric · `--reviewer acp` grades with your agent · `--reviewer api` with a key"
-                    )
-                );
-            }
-
+            let backend = choose_backend(&cli).ok_or_else(no_reviewer)?;
             let agent_cwd = data_dir.join("agent");
             std::fs::create_dir_all(&agent_cwd).ok();
             let reviewer = build_reviewer(&cli, backend, agent_cwd)?;
@@ -283,9 +266,6 @@ fn main() -> Result<()> {
 
             let mut summary = match target {
                 EvalTarget::Mock => readcode::eval::run_suite_mock(&corpus, &suite, trials, false)?,
-                EvalTarget::Local => {
-                    readcode::eval::run_suite(&corpus, &suite, &LocalReviewer, trials)?
-                }
                 EvalTarget::Api => {
                     let reviewer = build_reviewer(&cli, Backend::Api, agent_cwd)?;
                     readcode::eval::run_suite(&corpus, &suite, reviewer.as_ref(), trials)?
@@ -341,21 +321,20 @@ fn main() -> Result<()> {
 
 /// Explicit flag, then `READCODE_REVIEWER`, then auto-detect: a configured agent
 /// beats an API key, because that is the choice the user already made once.
-fn choose_backend(cli: &Cli) -> Backend {
-    if cli.offline {
-        return Backend::Local;
-    }
+/// There is no offline fallback — grading needs a model.
+fn choose_backend(cli: &Cli) -> Option<Backend> {
     if let Some(requested) = cli.reviewer {
-        return requested;
+        return Some(requested);
     }
     match std::env::var("READCODE_REVIEWER")
         .ok()
         .as_deref()
         .map(str::trim)
     {
-        Some("local") | Some("offline") => return Backend::Local,
-        Some("api") | Some("byok") => return Backend::Api,
-        Some("acp") | Some("agent") => return Backend::Acp,
+        Some("api") | Some("byok") | Some("openai") | Some("anthropic") => {
+            return Some(Backend::Api);
+        }
+        Some("acp") | Some("agent") => return Some(Backend::Acp),
         Some(other) if !other.is_empty() => {
             eprintln!("readcode: unknown READCODE_REVIEWER `{other}`, choosing automatically")
         }
@@ -365,17 +344,28 @@ fn choose_backend(cli: &Cli) -> Backend {
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
     if agent_configured {
-        return Backend::Acp;
+        return Some(Backend::Acp);
     }
     if ApiReviewer::from_env().is_some() {
-        return Backend::Api;
+        return Some(Backend::Api);
     }
-    Backend::Local
+    None
+}
+
+/// Neither configured: say exactly what to set, once, and stop. A grader that
+/// silently degrades to something worse than a model is not worth shipping.
+fn no_reviewer() -> anyhow::Error {
+    anyhow::anyhow!(
+        "no reviewer configured, and grading needs one.\n\n\
+         Your own agent (no API key):   export READCODE_AGENT=\"opencode acp\"\n\
+         An OpenAI-compatible key:      export READCODE_API_KEY=sk-...\n\
+         An Anthropic-compatible key:   export READCODE_API_KEY=... READCODE_API_STYLE=anthropic\n\n\
+         Or pass --reviewer acp / --reviewer api. `status`, `list` and `check` work without one."
+    )
 }
 
 fn build_reviewer(cli: &Cli, backend: Backend, agent_cwd: PathBuf) -> Result<Box<dyn Reviewer>> {
     match backend {
-        Backend::Local => Ok(Box::new(LocalReviewer)),
         Backend::Api => {
             let mut reviewer = ApiReviewer::from_env().context(
                 "no API key found — set READCODE_API_KEY (or OPENAI_API_KEY / ANTHROPIC_API_KEY), or use --reviewer acp",

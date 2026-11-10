@@ -20,81 +20,38 @@ fn count_words(text: &str) -> HashMap<&str, usize> {
 lines = [1, 2]
 ask = "What does this import bring into scope?"
 concepts = ["rust.use.import"]
-  [[blocks.expects]]
-  concept = "rust.use.import"
-  keywords = ["import", "bring", "scope", "hashmap", "so we can write"]
-  note = "`use` brings `HashMap` into scope, so the rest of the file writes `HashMap` instead of `std::collections::HashMap`."
+notes = { "rust.use.import" = "`use` brings `HashMap` into scope, so the rest of the file writes `HashMap` instead of `std::collections::HashMap`." }
 
 [[blocks]]
 lines = [3, 3]
 ask = "What does this signature promise, and where does the key's lifetime come from?"
 concepts = ["rust.fn.return", "rust.lifetime.elision"]
-  [[blocks.expects]]
-  concept = "rust.fn.return"
-  keywords = ["returns", "map", "hashmap", "counts per word", "usize"]
-  note = "It returns a map from a word to how many times it appeared; `usize` is the count."
-
-  [[blocks.expects]]
-  concept = "rust.lifetime.elision"
-  keywords = ["elided", "elision", "tied to text", "same lifetime", "borrows text", "from text", "as long as text"]
-  note = "The returned `&str` keys borrow from `text`, so the map cannot outlive the input; the lifetime is elided, not absent."
-
+notes = { "rust.fn.return" = "It returns a map from a word to how many times it appeared; `usize` is the count.", "rust.lifetime.elision" = "The returned `&str` keys borrow from `text`, so the map cannot outlive the input; the lifetime is elided, not absent." }
   [[blocks.line]]
   at = 3
   ask = "Where does the lifetime of the returned map come from — and what breaks if `text` is dropped?"
   concepts = ["rust.lifetime.elision"]
-    [[blocks.line.expects]]
-    concept = "rust.lifetime.elision"
-    keywords = ["elided", "elision", "tied to text", "same", "borrow", "from text", "as long as"]
-    note = "The compiler gives the returned map the same lifetime as `text`, so using it after `text` dies is a compile error."
+  notes = { "rust.lifetime.elision" = "The compiler gives the returned map the same lifetime as `text`, so using it after `text` dies is a compile error." }
 
 [[blocks]]
 lines = [4, 5]
 ask = "Why is `counts` mutable, and what does the `for` loop iterate over?"
 concepts = ["rust.binding.mut", "rust.iterator.for"]
-  [[blocks.expects]]
-  concept = "rust.binding.mut"
-  keywords = ["mut", "mutable", "insert", "change", "modify"]
-  note = "`mut` is required because the loop inserts into the map; without it every `insert` would be a compile error."
-
-  [[blocks.expects]]
-  concept = "rust.iterator.for"
-  keywords = ["iterator", "split_whitespace", "words", "yields", "each", "loop"]
-  note = "`for` drives an iterator: `split_whitespace()` yields each word as a `&str` slice of `text`."
+notes = { "rust.binding.mut" = "`mut` is required because the loop inserts into the map; without it every `insert` would be a compile error.", "rust.iterator.for" = "`for` drives an iterator: `split_whitespace()` yields each word as a `&str` slice of `text`." }
 
 [[blocks]]
 lines = [6, 7]
 ask = "Unpack `*counts.entry(word).or_insert(0) += 1;` — what does each part do?"
 concepts = ["rust.hashmap.entry", "rust.deref.assign"]
-  [[blocks.expects]]
-  concept = "rust.hashmap.entry"
-  keywords = ["entry", "or_insert", "insert", "missing", "default", "0", "vacant", "look up"]
-  note = "`entry(word)` looks the key up once; `or_insert(0)` inserts a default 0 when it is absent and returns a slot either way."
-
-  [[blocks.expects]]
-  concept = "rust.deref.assign"
-  keywords = ["deref", "*", "mutable reference", "&mut", "add one", "increment", "+= 1"]
-  note = "`or_insert` hands back `&mut usize`; the `*` dereferences it so `+= 1` writes the count, not the reference."
-
+notes = { "rust.hashmap.entry" = "`entry(word)` looks the key up once; `or_insert(0)` inserts a default 0 when it is absent and returns a slot either way.", "rust.deref.assign" = "`or_insert` hands back `&mut usize`; the `*` dereferences it so `+= 1` writes the count, not the reference." }
   [[blocks.line]]
   at = 6
   ask = "Unpack this line: the `*`, the `entry`, and the `or_insert`."
   concepts = ["rust.hashmap.entry", "rust.deref.assign"]
-    [[blocks.line.expects]]
-    concept = "rust.hashmap.entry"
-    keywords = ["entry", "or_insert", "insert", "missing", "default", "look up", "0"]
-    note = "`entry(word)` looks the key up once; `or_insert(0)` inserts a default 0 when the key is absent and hands back the slot either way."
-
-    [[blocks.line.expects]]
-    concept = "rust.deref.assign"
-    keywords = ["deref", "dereference", "*", "mutable reference", "&mut", "cannot assign", "add one"]
-    note = "`or_insert` returns a `&mut usize`; the `*` reaches the integer behind it, so `+= 1` writes the count. Without the `*` you would be assigning to a reference."
+  notes = { "rust.hashmap.entry" = "`entry(word)` looks the key up once; `or_insert(0)` inserts a default 0 when the key is absent and hands back the slot either way.", "rust.deref.assign" = "`or_insert` returns a `&mut usize`; the `*` reaches the integer behind it, so `+= 1` writes the count. Without the `*` you would be assigning to a reference." }
 
 [[blocks]]
 lines = [8, 9]
 ask = "What is returned here, and why is there no `return` keyword?"
 concepts = ["rust.return.value"]
-  [[blocks.expects]]
-  concept = "rust.return.value"
-  keywords = ["tail", "last expression", "implicit", "no semicolon", "returns", "moves"]
-  note = "`counts` is the tail expression: the value is moved out as the return value, which is why it has no semicolon."
+notes = { "rust.return.value" = "`counts` is the tail expression: the value is moved out as the return value, which is why it has no semicolon." }

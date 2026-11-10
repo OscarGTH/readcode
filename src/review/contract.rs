@@ -1,5 +1,5 @@
-//! The one text that defines grading. Both model-backed reviewers use it, so
-//! the offline rubric, the API client and the ACP agent cannot drift apart.
+//! The one text that defines grading. Both reviewers use it, so the API client
+//! and the ACP agent cannot grade differently.
 //!
 //! ACP has no system-prompt field, so this contract is prepended to the first
 //! prompt of a session — see [`prime`].
@@ -52,14 +52,8 @@ pub fn task(snippet: &Snippet, prompts: &[Prompt], annotations: &[Annotation]) -
             prompt.ask
         ));
         for concept in &prompt.concepts {
-            match prompt
-                .expects
-                .iter()
-                .find(|expect| &expect.concept == concept)
-            {
-                Some(expect) if !expect.note.is_empty() => {
-                    out.push_str(&format!("  - {concept}: {}\n", expect.note))
-                }
+            match prompt.notes.get(concept) {
+                Some(note) if !note.is_empty() => out.push_str(&format!("  - {concept}: {note}\n")),
                 _ => out.push_str(&format!("  - {concept}\n")),
             }
         }

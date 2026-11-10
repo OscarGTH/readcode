@@ -3,7 +3,6 @@
 //! Three targets share this runner:
 //!  * `mock` — answers from the case's own expectations. It proves the harness
 //!    and the scoring arithmetic, and it is the only eval cheap enough for CI.
-//!  * `local` — the offline rubric. Deterministic, so it is a regression guard.
 //!  * `api` / `acp` — a real reviewer. Costs tokens, run it deliberately.
 
 use std::collections::BTreeMap;
@@ -693,7 +692,6 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 mod tests {
     use super::*;
     use crate::eval::case::Case;
-    use crate::review::local::LocalReviewer;
 
     const CASES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/evals/cases");
 
@@ -739,26 +737,11 @@ mod tests {
     }
 
     #[test]
-    fn the_offline_rubric_meets_its_recorded_baseline() {
-        // The offline rubric cannot credit a paraphrase, so this is a floor,
-        // not a target: it exists to catch a regression in the rubric itself.
-        let corpus = corpus();
-        let cases = cases();
-        let summary = run_suite(&corpus, &cases, &LocalReviewer, 1).unwrap();
-        let score = summary.score();
-        assert!(
-            score >= 0.6,
-            "offline reviewer scored {score:.2}:\n{}",
-            summary.report()
-        );
-    }
-
-    #[test]
     fn a_case_naming_an_unknown_snippet_is_an_error() {
         let text =
             std::fs::read_to_string(Path::new(CASES).join("credits-a-paraphrase.toml")).unwrap();
         let case = Case::parse(&text.replace("rust-001", "rust-999")).unwrap();
-        let error = run_case(&corpus(), &case, &LocalReviewer, 1)
+        let error = run_case(&corpus(), &case, &MockReviewer::from_case(&case), 1)
             .unwrap_err()
             .to_string();
         assert!(error.contains("unknown snippet"), "{error}");

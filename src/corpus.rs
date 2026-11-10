@@ -76,10 +76,17 @@ impl Corpus {
     fn from_sources<'a>(sources: impl Iterator<Item = (&'a str, &'a str)>) -> Result<Self> {
         let mut snippets = Vec::new();
         for (name, text) in sources {
-            let snippet = Snippet::parse(text).with_context(|| format!("in {name}"))?;
-            snippet
-                .validate()
-                .with_context(|| format!("invalid snippet in {name}"))?;
+            let snippet = Snippet::parse(text).with_context(|| {
+                let hint = if text.contains("expects") {
+                    " (this corpus was written for 0.2: `expects`/`keywords` are gone, put the ground truth in `notes = { \"<concept>\" = \"...\" }`)"
+                } else {
+                    ""
+                };
+                format!("in {name}{hint}")
+            })?;
+            snippet.validate().with_context(|| {
+                format!("invalid snippet in {name}\n\n{}\n", snippet.numbered_code())
+            })?;
             snippets.push(snippet);
         }
         snippets.sort_by(|a, b| a.id.cmp(&b.id));
@@ -139,16 +146,6 @@ impl Corpus {
         for snippet in &self.snippets {
             if let Err(err) = snippet.validate() {
                 problems.push(format!("{}: {err}", snippet.id));
-            }
-            for block in &snippet.blocks {
-                for concept in &block.concepts {
-                    if !block.expects.iter().any(|e| &e.concept == concept) {
-                        problems.push(format!(
-                            "{}: concept `{concept}` has no keywords, only an LLM can grade it",
-                            snippet.id
-                        ));
-                    }
-                }
             }
         }
         problems
@@ -222,9 +219,6 @@ let x = 1;
 lines = [1, 1]
 ask = "what is x?"
 concepts = ["rust.binding"]
-  [[blocks.expects]]
-  concept = "rust.binding"
-  keywords = ["binding"]
 "#
         )
     }
