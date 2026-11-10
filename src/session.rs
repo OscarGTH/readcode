@@ -563,6 +563,7 @@ mod tests {
                         verdict,
                         feedback: String::new(),
                         missing: Vec::new(),
+                        teach: None,
                         concepts: prompt
                             .concepts
                             .iter()

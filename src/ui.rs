@@ -316,6 +316,12 @@ pub fn print_grade(
                 style.dim(&format!("· {missing}"))
             )?;
         }
+        if let Some(teach) = &graded.teach {
+            writeln!(out)?;
+            for line in teach.lines() {
+                writeln!(out, "    {} {}", style.cyan("why"), line)?;
+            }
+        }
     }
 
     if !grade.summary.is_empty() {

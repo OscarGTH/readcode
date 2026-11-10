@@ -183,8 +183,11 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
     for (index, _line) in lines.iter().enumerate() {
         let number = index + 1;
 
-        // The note goes above the line it explains.
-        if let Some(note) = notes.get(&number) {
+        // A note about this line alone goes above it, where a comment about a
+        // line belongs.
+        if let Some((end, note)) = notes.get(&number)
+            && *end == number
+        {
             for piece in wrap(note, text_width) {
                 rows.push(Line::from(vec![
                     Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
@@ -220,6 +223,34 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
             );
         }
         rows.push(Line::from(spans));
+
+        // A note about a whole block goes after the block's last line, labelled
+        // with the span, so it never reads as a comment on its first line.
+        for (start, end, note) in notes
+            .iter()
+            .filter(|(start, (end, _))| *end == number && **start < *end)
+            .map(|(start, (end, note))| (*start, *end, note))
+        {
+            let label = format!("// on lines {start}-{end}: ");
+            let mut first = true;
+            for piece in wrap(note, text_width.saturating_sub(label.len())) {
+                rows.push(Line::from(vec![
+                    Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
+                    Span::styled(
+                        format!(
+                            "{}{piece}",
+                            if first {
+                                label.clone()
+                            } else {
+                                "   ".to_string()
+                            }
+                        ),
+                        Theme::note(),
+                    ),
+                ]));
+                first = false;
+            }
+        }
     }
 
     let height = area.height as usize;
@@ -309,6 +340,12 @@ fn cursor_text(app: &App) -> Text<'static> {
     Text::from(lines)
 }
 
+/// The review: for each prompt, the code it was about, what the learner wrote,
+/// the verdict, and — when there is something to learn — the explanation.
+///
+/// The code is here on purpose. Reading a list of verdicts without the lines
+/// beside them is asking the learner to remember what they were looking at, and
+/// the moment they most want to compare is the moment they get the answer.
 fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
     if let Some(error) = &app.error {
         frame.render_widget(
@@ -323,9 +360,12 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
         return;
     };
 
-    let width = area.width.saturating_sub(6) as usize;
-    let mut rows: Vec<Line> = Vec::new();
+    let width = area.width as usize;
+    let code: Vec<String> = app.snippet.code.lines().map(str::to_string).collect();
+    let tokens = highlight::tokens(&code.iter().map(String::as_str).collect::<Vec<_>>());
+    let gutter = app.snippet.line_count().to_string().len().max(2);
 
+    let mut rows: Vec<Line> = Vec::new();
     let mut counts = [0usize; 4];
     for graded in &grade.prompts {
         counts[match graded.verdict {
@@ -359,18 +399,16 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
     rows.push(Line::raw(""));
 
     for graded in &grade.prompts {
-        let span = app
-            .prompts
-            .get(graded.prompt)
-            .map(|prompt| prompt.span_label())
-            .unwrap_or_default();
+        let Some(prompt) = app.prompts.get(graded.prompt) else {
+            continue;
+        };
         rows.push(Line::from(vec![
             Span::styled(
                 format!(" {} ", verdict_mark(graded.verdict)),
                 Theme::verdict(graded.verdict),
             ),
             Span::styled(
-                format!("prompt {} · {span}", graded.prompt + 1),
+                format!("prompt {} · {}", graded.prompt + 1, prompt.span_label()),
                 Theme::title(),
             ),
             Span::styled(
@@ -378,34 +416,69 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
                 Theme::verdict(graded.verdict),
             ),
         ]));
-        for (concept, verdict) in &graded.concepts {
-            rows.push(Line::from(vec![
-                Span::styled("    ", Theme::hint()),
-                Span::styled(format!("{concept:<30}"), Theme::dim()),
-                Span::styled(verdict_name(*verdict).to_string(), Theme::verdict(*verdict)),
-            ]));
-        }
-        for piece in wrap(&graded.feedback, width.saturating_sub(4)) {
-            rows.push(Line::from(vec![
-                Span::styled("    ", Theme::hint()),
-                Span::styled(piece, Style::default()),
-            ]));
-        }
-        for missing in &graded.missing {
-            for (index, piece) in wrap(missing, width.saturating_sub(16))
-                .into_iter()
-                .enumerate()
-            {
-                let lead = if index == 0 {
-                    "    missed · "
-                } else {
-                    "             "
-                };
+        // Concept-by-concept detail only earns its space when it disagrees with
+        // the prompt's overall verdict; otherwise the header already said it.
+        let nuanced = graded
+            .concepts
+            .iter()
+            .any(|(_, verdict)| *verdict != graded.verdict);
+        if nuanced {
+            for (concept, verdict) in &graded.concepts {
                 rows.push(Line::from(vec![
-                    Span::styled(lead.to_string(), Theme::verdict(Verdict::Partial)),
-                    Span::styled(piece, Theme::dim()),
+                    Span::styled("     ", Theme::hint()),
+                    Span::styled(format!("{concept:<30}"), Theme::dim()),
+                    Span::styled(verdict_name(*verdict).to_string(), Theme::verdict(*verdict)),
                 ]));
             }
+        }
+        rows.push(Line::raw(""));
+
+        code_rows(&mut rows, &tokens, gutter, prompt.start, prompt.end);
+
+        let answer = app
+            .answers
+            .get(graded.prompt)
+            .map(|text| text.trim())
+            .filter(|text| !text.is_empty())
+            .unwrap_or("(left blank)");
+        labelled(
+            &mut rows,
+            "you",
+            answer,
+            Theme::note(),
+            Theme::note(),
+            width,
+        );
+
+        if !graded.feedback.trim().is_empty() {
+            labelled(
+                &mut rows,
+                "review",
+                graded.feedback.trim(),
+                Theme::dim(),
+                Style::default(),
+                width,
+            );
+        }
+        for missing in &graded.missing {
+            labelled(
+                &mut rows,
+                "missed",
+                missing,
+                Theme::verdict(Verdict::Partial),
+                Theme::dim(),
+                width,
+            );
+        }
+        if let Some(teach) = &graded.teach {
+            labelled(
+                &mut rows,
+                "why",
+                teach,
+                Theme::type_(),
+                Style::default(),
+                width,
+            );
         }
         rows.push(Line::raw(""));
     }
@@ -418,6 +491,80 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
             .scroll((scroll, 0)),
         area,
     );
+}
+
+/// How many code lines a review entry shows before it starts abbreviating. The
+/// review is for recognising the code, not for re-reading all of it.
+const REVIEW_CODE_LINES: usize = 6;
+
+/// The prompted span's code, syntax-coloured and indented under the verdict.
+fn code_rows(
+    rows: &mut Vec<Line>,
+    tokens: &[Vec<(Token, String)>],
+    gutter: usize,
+    start: usize,
+    end: usize,
+) {
+    let shown: Vec<usize> = if end - start < REVIEW_CODE_LINES {
+        (start..=end).collect()
+    } else {
+        let mut shown: Vec<usize> = (start..start + 3).collect();
+        shown.extend((end - 1)..=end);
+        shown
+    };
+    let mut previous: Option<usize> = None;
+    for number in shown {
+        if let Some(previous) = previous
+            && number > previous + 1
+        {
+            rows.push(Line::from(Span::styled(
+                format!("     ⋯ {} more lines", number - previous - 1),
+                Theme::hint(),
+            )));
+        }
+        previous = Some(number);
+        let mut spans = vec![Span::styled(
+            format!("    {number:>gutter$} │ "),
+            Theme::gutter(),
+        )];
+        for (token, text) in tokens.get(number - 1).into_iter().flatten() {
+            spans.push(Span::styled(text.clone(), token_style(*token)));
+        }
+        rows.push(Line::from(spans));
+    }
+}
+
+/// One labelled paragraph: a dim label in a fixed column, then wrapped text.
+fn labelled(
+    rows: &mut Vec<Line>,
+    label: &str,
+    text: &str,
+    label_style: Style,
+    text_style: Style,
+    width: usize,
+) {
+    let indent = 13usize;
+    for (index, piece) in wrap(text, width.saturating_sub(indent).max(20))
+        .into_iter()
+        .enumerate()
+    {
+        let lead = if index == 0 {
+            format!("    {label:<8}")
+        } else {
+            " ".repeat(indent)
+        };
+        rows.push(Line::from(vec![
+            Span::styled(
+                lead,
+                if index == 0 {
+                    label_style
+                } else {
+                    Theme::hint()
+                },
+            ),
+            Span::styled(piece, text_style),
+        ]));
+    }
 }
 
 fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
@@ -565,6 +712,52 @@ mod tests {
     }
 
     #[test]
+    fn a_block_note_sits_after_the_block_and_says_which_lines_it_covers() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("004").unwrap();
+        let prompts = snippet.prompts(crate::snippet::Asks::Blocks);
+        let mut app = App::new(
+            snippet,
+            prompts,
+            crate::snippet::Asks::Blocks,
+            "acp:opencode".into(),
+        );
+        for char_ in "the counter starts at zero".chars() {
+            app.on_key(Key::Char(char_));
+        }
+        app.on_key(Key::Enter);
+        let screen = screen(&app, 96, 30);
+
+        let note = screen
+            .find("// on lines 1-5: the counter starts at zero")
+            .unwrap_or_else(|| panic!("block note labelled with its span:\n{screen}"));
+        let block_start = screen.find(" 1 │").expect("line 1");
+        let block_end = screen.find(" 5 │").expect("line 5");
+        assert!(note > block_end, "the note follows the block:\n{screen}");
+        assert!(note > block_start, "{screen}");
+    }
+
+    #[test]
+    fn a_line_note_stays_above_its_own_line() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("005").unwrap();
+        let mut app = App::new(
+            snippet,
+            snippet.prompts(crate::snippet::Asks::Lines),
+            crate::snippet::Asks::Lines,
+            "acp:opencode".into(),
+        );
+        for char_ in "imports the map type".chars() {
+            app.on_key(Key::Char(char_));
+        }
+        app.on_key(Key::Enter);
+        let screen = screen(&app, 96, 30);
+        let note = screen.find("// imports the map type").expect("note");
+        let line = screen.find("use std::collections::HashMap;").expect("line");
+        assert!(note < line, "a one-line note stays above it:\n{screen}");
+    }
+
+    #[test]
     fn the_question_and_the_typed_answer_are_visible() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("005").unwrap();
@@ -610,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn the_review_lists_verdicts_and_what_was_missed() {
+    fn the_review_shows_the_code_the_answer_and_the_lesson() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("005").unwrap();
         let mut app = app_with_answer(snippet);
@@ -625,24 +818,77 @@ mod tests {
                     feedback: "You correctly identify that the import brings HashMap into scope."
                         .into(),
                     missing: vec![],
+                    teach: None,
                 },
                 PromptGrade {
                     prompt: 1,
                     verdict: Verdict::Partial,
-                    concepts: vec![("rust.lifetime".into(), Verdict::Partial)],
+                    concepts: vec![("rust.lifetime.elision".into(), Verdict::Partial)],
                     feedback: "The lifetime is mentioned but not why it is needed.".into(),
                     missing: vec!["why the map cannot outlive the input".into()],
+                    teach: Some(
+                        "The map stores borrows of the input text, so it cannot outlive it.".into(),
+                    ),
                 },
             ],
         };
         app.finish(grade);
-        let screen = screen(&app, 90, 30);
+        let screen = screen(&app, 96, 34);
 
         assert!(screen.contains("review · acp:opencode"), "{screen}");
         assert!(screen.contains("1 correct"), "{screen}");
         assert!(screen.contains("1 partial"), "{screen}");
-        assert!(screen.contains("rust.use.import"), "{screen}");
-        assert!(screen.contains("missed · why the map"), "{screen}");
+        // The code the answer was about, so it can be compared.
+        assert!(
+            screen.contains("use std::collections::HashMap;"),
+            "{screen}"
+        );
+        assert!(screen.contains("fn count_words"), "{screen}");
+        // The learner's own words, and the lesson when the answer fell short.
+        assert!(screen.contains("you"), "{screen}");
+        assert!(screen.contains("a"), "{screen}");
+        assert!(screen.contains("missed"), "{screen}");
+        assert!(screen.contains("why the map"), "{screen}");
+        assert!(
+            screen.contains("The map stores borrows of the input text"),
+            "{screen}"
+        );
+    }
+
+    #[test]
+    fn a_long_block_shows_the_head_and_tail_of_its_code() {
+        let corpus = Corpus::builtin().unwrap();
+        // rust-004's third block is seven lines: longer than the review shows.
+        let snippet = corpus.find("004").unwrap();
+        let prompts = snippet.prompts(crate::snippet::Asks::Blocks);
+        let mut app = App::new(
+            snippet,
+            prompts,
+            crate::snippet::Asks::Blocks,
+            "acp:opencode".into(),
+        );
+        let prompt = app.prompts.get(2).cloned().expect("a third prompt");
+        let grade = Grade {
+            reviewer: "acp:opencode".into(),
+            summary: String::new(),
+            prompts: vec![PromptGrade {
+                prompt: 2,
+                verdict: Verdict::Partial,
+                concepts: prompt
+                    .concepts
+                    .iter()
+                    .map(|concept| (concept.clone(), Verdict::Partial))
+                    .collect(),
+                feedback: "Partly there.".into(),
+                missing: vec![],
+                teach: Some("Think about who owns the string.".into()),
+            }],
+        };
+        app.finish(grade);
+        let screen = screen(&app, 96, 30);
+        // The block is longer than the cap, so it is abbreviated rather than
+        // pushing every other prompt out of reach.
+        assert!(screen.contains("more lines"), "{screen}");
     }
 
     #[test]

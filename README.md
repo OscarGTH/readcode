@@ -106,11 +106,19 @@ turns into your own annotated copy as you go.
 When the last question is answered it grades you per concept and shows you the review —
 what was right, what was thin, and what you missed:
 
-![The review: a count of verdicts, then per prompt the concepts, the feedback and the missed points](docs/tui-review.png)
+![The review: for each prompt, the code it was about, your answer, the verdict, what you missed, and the explanation](docs/tui-review.png)
 
-`missed · …` is the reviewer naming something you did not mention. A concept the reviewer
-could not judge from that particular answer is left out entirely rather than marked
-"unknown" — a line is only asked to prove what it can show.
+Each entry keeps the code beside your answer, because the moment you want to know *why*
+something was wrong is the moment you need to see what you were looking at:
+
+- `you` — your words, however you wrote them
+- `review` — the verdict on those words
+- `missed · …` — something the answer did not mention; a concept the reviewer could not
+  judge from that answer is left out rather than marked "unknown", since a line is only
+  asked to prove what it can show
+- `why` — the lesson: what the code actually does, in two or three sentences. It is
+  required whenever the verdict is not "correct", and it is the whole answer when you said
+  you did not know. Grading that only marks you down is not teaching.
 
 ```sh
 readcode --snippet 002     # a specific snippet (id, or any unambiguous suffix)
@@ -132,6 +140,10 @@ Comprehension and attention to detail are different skills, so the app asks both
 - **line by line** — one question per significant line, answered the way you would
   annotate a file: the line being asked is marked, and the lines you have already
   explained carry your note above them as a `//` comment.
+
+A note about a single line sits above that line. A note about a block sits *after* the
+block's last line, labelled with its span (`// on lines 1-5: …`), so it never reads as a
+comment on whichever line happened to open the block.
 
 You do not choose: the first visit uses whatever the snippet is authored for, and the
 next visit to the same snippet **alternates** to the other mode. Same code, different
@@ -309,6 +321,10 @@ count lines by hand to find the off-by-one.
   graded from the code alone, which is looser.
 - **Reuse concept ids.** `rust.question_mark` across five snippets teaches the scheduler
   that this is one skill; five one-off ids teach it nothing.
+- **One question per prompt.** If the ask needs the word "and" to join two unrelated ideas
+  ("what does `use` do, and why is the error boxed?"), it is two blocks, or one block plus a
+  `blocks.line` entry. A bundled question gets one answer covering two things, and then the
+  answer is graded twice against two rubrics that each see half of it.
 - **A line inherits its block's concepts** unless it has its own `blocks.line` entry, and
   then it is asked to prove all of them. If a block holds two ideas that land on different
   lines, give each line its own `ask` and `concepts`, or the question on each line asks for
@@ -332,7 +348,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 133 tests, no network, no agent
+cargo test                        # 136 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

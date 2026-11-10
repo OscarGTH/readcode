@@ -397,6 +397,12 @@ fn observed(expectation: &Expectation, grade: &Grade) -> String {
     let Some(prompt) = grade.prompts.get(expectation.prompt - 1) else {
         return "nothing".to_string();
     };
+    if expectation.teaches {
+        return match prompt.teach.as_deref().map(str::trim) {
+            Some(teach) if !teach.is_empty() => "a lesson".to_string(),
+            _ => "no lesson".to_string(),
+        };
+    }
     match &expectation.concept {
         Some(concept) => prompt
             .concepts
@@ -416,6 +422,12 @@ fn judge(expectation: &Expectation, grade: &Grade, prompts: &[Prompt]) -> Result
             expectation.prompt
         );
     };
+    if expectation.teaches {
+        return Ok(prompt
+            .teach
+            .as_deref()
+            .is_some_and(|teach| !teach.trim().is_empty()));
+    }
     // A prompt may legitimately leave a concept ungraded: the annotation never
     // addressed it. That cannot satisfy an exact assertion, and it cannot
     // violate a prohibition either.
@@ -572,6 +584,10 @@ impl MockReviewer {
             contrarian: false,
         };
         for expectation in &case.expect {
+            // A teaching-only expectation constrains the lesson, not the verdict.
+            if expectation.teaches && expectation.verdict.is_none() {
+                continue;
+            }
             let verdict = satisfying(expectation);
             match &expectation.concept {
                 Some(concept) => {
@@ -667,6 +683,19 @@ impl Reviewer for MockReviewer {
                     feedback: String::new(),
                     missing: Vec::new(),
                     concepts,
+                    // Anything not credited gets a lesson, exactly as the
+                    // contract asks the real reviewer for.
+                    teach: (fallback != Verdict::Correct).then(|| {
+                        let notes: Vec<&str> = prompt.notes.values().map(String::as_str).collect();
+                        if notes.is_empty() {
+                            format!(
+                                "What {} does, in the notes for this prompt.",
+                                prompt.span_label()
+                            )
+                        } else {
+                            notes.join(" ")
+                        }
+                    }),
                 }
             })
             .collect();

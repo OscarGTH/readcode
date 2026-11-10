@@ -42,6 +42,8 @@ pub struct PromptGrade {
     pub verdict: Verdict,
     pub feedback: String,
     pub missing: Vec<String>,
+    /// The lesson: what the code does, when the answer was not `correct`.
+    pub teach: Option<String>,
     /// Per-concept verdicts, in the prompt's concept order.
     pub concepts: Vec<(String, Verdict)>,
 }
@@ -118,6 +120,16 @@ pub struct RawPrompt {
     pub missing: Vec<String>,
     #[serde(default)]
     pub feedback: String,
+    /// Some models call the lesson "explanation" or "lesson"; accept the useful
+    /// spellings rather than dropping the best part of the answer.
+    #[serde(
+        default,
+        alias = "explanation",
+        alias = "lesson",
+        alias = "teaching",
+        alias = "what_it_does"
+    )]
+    pub teach: String,
 }
 
 /// Models sometimes answer `"missing": "one thing"` instead of a list.
@@ -169,6 +181,7 @@ impl Grade {
                     verdict: Verdict::Unknown,
                     feedback: "the reviewer did not grade this prompt".to_string(),
                     missing: Vec::new(),
+                    teach: None,
                     concepts: prompt
                         .concepts
                         .iter()
@@ -219,6 +232,10 @@ impl Grade {
                     .filter(|item| !item.is_empty())
                     .collect(),
                 concepts,
+                teach: {
+                    let lesson = raw_prompt.teach.trim().to_string();
+                    (!lesson.is_empty()).then_some(lesson)
+                },
             });
         }
 

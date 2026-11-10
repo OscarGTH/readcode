@@ -1,0 +1,18 @@
+id = "teaches-when-the-answer-is-unknown"
+description = "The answer \"I do not know\" is the moment the tool has to teach. The verdict is `unknown`, and the reviewer must also explain the code rather than only recording the gap."
+snippet = "rust-004"
+mode = "blocks"
+must_pass = true
+tags = ["pedagogy", "teaching"]
+
+[[annotations]]
+prompt = 2
+text = "I don't know."
+
+[[expect]]
+prompt = 2
+verdict = "unknown"
+
+[[expect]]
+prompt = 2
+teaches = true

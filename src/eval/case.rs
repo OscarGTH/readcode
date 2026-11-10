@@ -57,6 +57,10 @@ pub struct Expectation {
     /// Verdicts that must not appear (e.g. a misconception must not be credited).
     #[serde(default, alias = "not_verdict")]
     pub not: Vec<String>,
+    /// Require the reviewer to explain the code, not just mark it. An answer of
+    /// "I don't know" is exactly when the lesson matters most.
+    #[serde(default)]
+    pub teaches: bool,
 }
 
 impl Expectation {
@@ -123,8 +127,10 @@ impl Case {
                     self.id,
                     expectation.prompt
                 ),
-                (None, true) => bail!(
-                    "case `{}`: expectation for prompt {} needs `verdict` or `not`",
+                // A teaching-only expectation is legitimate: it asserts that
+                // the reviewer explained the code, whatever the verdict was.
+                (None, true) if !expectation.teaches => bail!(
+                    "case `{}`: expectation for prompt {} needs `verdict`, `not` or `teaches`",
                     self.id,
                     expectation.prompt
                 ),
@@ -295,7 +301,7 @@ verdict = "unknown"
         let text = CASE.replace("verdict = \"unknown\"", "");
         let case = Case::parse(&text).unwrap();
         let err = case.validate().unwrap_err().to_string();
-        assert!(err.contains("needs `verdict` or `not`"), "{err}");
+        assert!(err.contains("needs `verdict`, `not` or `teaches`"), "{err}");
     }
 
     #[test]

@@ -82,15 +82,16 @@ impl<'a> App<'a> {
         &self.input
     }
 
-    /// Notes keyed by line, for the code pane: an answer given for a line is
-    /// rendered above that line as a comment.
-    pub fn notes(&self) -> BTreeMap<usize, String> {
+    /// Notes keyed by the first line they cover, with the last line too so the
+    /// code pane can tell a line's note from a block's: a note about one line
+    /// sits above it, a note about a span sits after it, labelled with the span.
+    pub fn notes(&self) -> BTreeMap<usize, (usize, String)> {
         let mut notes = BTreeMap::new();
         for (prompt, answer) in self.prompts.iter().zip(&self.answers) {
             if answer.trim().is_empty() {
                 continue;
             }
-            notes.insert(prompt.start, answer.trim().to_string());
+            notes.insert(prompt.start, (prompt.end, answer.trim().to_string()));
         }
         notes
     }
@@ -369,7 +370,7 @@ mod tests {
         assert_eq!(app.answers[0], "brings HashMap into scope");
         assert_eq!(app.input_text(), "");
         assert_eq!(
-            app.notes().get(&first_line).map(String::as_str),
+            app.notes().get(&first_line).map(|(_, note)| note.as_str()),
             Some("brings HashMap into scope")
         );
     }
