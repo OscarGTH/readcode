@@ -61,6 +61,10 @@ pub struct Snippet {
     /// The band of learner levels this snippet suits.
     #[serde(default)]
     pub levels: Option<[u8; 2]>,
+    /// Reading for this snippet specifically, shown in the review before the
+    /// per-concept links.
+    #[serde(default)]
+    pub docs: Vec<SnippetDoc>,
     pub code: String,
     pub blocks: Vec<Block>,
 }
@@ -156,6 +160,14 @@ pub struct LinePrompt {
     /// Defaults to the owning block's notes, for these concepts.
     #[serde(default)]
     pub notes: BTreeMap<String, String>,
+}
+
+/// A link an author wants shown with their snippet.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SnippetDoc {
+    pub title: String,
+    pub url: String,
 }
 
 fn default_ask() -> String {
@@ -369,6 +381,15 @@ impl Snippet {
                 "snippet `{}`: set either `level` (one rung) or `levels` (a range), not both",
                 self.id
             );
+        }
+        for doc in &self.docs {
+            if !doc.url.starts_with("https://") && !doc.url.starts_with("http://") {
+                bail!(
+                    "snippet `{}`: `docs` entry `{}` needs a full http(s) URL",
+                    self.id,
+                    doc.title
+                );
+            }
         }
         let levels = self.levels();
         if levels.from == 0 || levels.to > MAX_LEVEL || levels.from > levels.to {
@@ -622,6 +643,23 @@ concepts = ["rust.binding"]
         let snippet = with_level("level = 1\nlevels = [1, 2]");
         let error = snippet.validate().expect_err("ambiguous");
         assert!(format!("{error}").contains("not both"), "{error}");
+    }
+
+    #[test]
+    fn an_author_can_point_at_their_own_reading() {
+        let snippet = with_level(
+            "docs = [{ title = \"The Book\", url = \"https://doc.rust-lang.org/book/\" }]",
+        );
+        snippet.validate().unwrap();
+        assert_eq!(snippet.docs.len(), 1);
+        assert_eq!(snippet.docs[0].title, "The Book");
+    }
+
+    #[test]
+    fn a_link_that_is_not_a_url_is_rejected() {
+        let snippet = with_level("docs = [{ title = \"Somewhere\", url = \"doc.rust-lang.org\" }]");
+        let error = snippet.validate().expect_err("not a URL");
+        assert!(format!("{error}").contains("http(s) URL"), "{error}");
     }
 
     #[test]

@@ -243,7 +243,38 @@ const EMBEDDED: &[(&str, &str)] = &[
         "says-i-dont-know.toml",
         include_str!("../../evals/cases/says-i-dont-know.toml"),
     ),
+    (
+        "teaches-when-the-answer-is-unknown.toml",
+        include_str!("../../evals/cases/teaches-when-the-answer-is-unknown.toml"),
+    ),
 ];
+
+#[cfg(test)]
+mod embedded_tests {
+    use super::*;
+
+    /// Every case file on disk has to be in the binary too: an installed
+    /// `readcode eval` runs from a machine with no checkout, and shipping a
+    /// suite that silently lost a case is worse than shipping none.
+    #[test]
+    fn every_case_on_disk_is_embedded() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("evals/cases");
+        let mut on_disk: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let name = entry.file_name().to_string_lossy().to_string();
+                name.ends_with(".toml").then_some(name)
+            })
+            .collect();
+        on_disk.sort();
+
+        let mut embedded: Vec<String> = EMBEDDED.iter().map(|(name, _)| name.to_string()).collect();
+        embedded.sort();
+
+        assert_eq!(on_disk, embedded);
+    }
+}
 
 /// Loads cases from a directory when one is given (or when `./evals/cases`
 /// exists), otherwise from the embedded copy.
@@ -328,7 +359,7 @@ verdict = "unknown"
         let cases = super::load_embedded().unwrap();
         assert_eq!(
             cases.len(),
-            6,
+            7,
             "{:?}",
             cases.iter().map(|c| &c.id).collect::<Vec<_>>()
         );

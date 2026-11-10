@@ -480,6 +480,17 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
                 width,
             );
         }
+        for doc in reading(app, prompt) {
+            labelled(
+                &mut rows,
+                "docs",
+                &doc.title,
+                Theme::dim(),
+                Theme::dim(),
+                width,
+            );
+            labelled(&mut rows, "", &doc.url, Theme::hint(), Theme::hint(), width);
+        }
         rows.push(Line::raw(""));
     }
 
@@ -491,6 +502,26 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
             .scroll((scroll, 0)),
         area,
     );
+}
+
+/// Where to read more: whatever the snippet author added, then one page per
+/// distinct topic among the prompt's concepts.
+fn reading(app: &App, prompt: &crate::snippet::Prompt) -> Vec<crate::docs::Doc> {
+    let mut docs: Vec<crate::docs::Doc> = app
+        .snippet
+        .docs
+        .iter()
+        .map(|doc| crate::docs::Doc {
+            title: doc.title.clone(),
+            url: doc.url.clone(),
+        })
+        .collect();
+    for doc in crate::docs::for_concepts(prompt.concepts.iter().map(String::as_str)) {
+        if !docs.iter().any(|existing| existing.url == doc.url) {
+            docs.push(doc);
+        }
+    }
+    docs
 }
 
 /// How many code lines a review entry shows before it starts abbreviating. The
@@ -853,6 +884,10 @@ mod tests {
             screen.contains("The map stores borrows of the input text"),
             "{screen}"
         );
+        // Somewhere to read more, without asking a model for a URL.
+        assert!(screen.contains("docs"), "{screen}");
+        assert!(screen.contains("doc.rust-lang.org"), "{screen}");
+        assert!(screen.contains("ch10-03"), "the lifetime chapter: {screen}");
     }
 
     #[test]

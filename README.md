@@ -119,6 +119,9 @@ something was wrong is the moment you need to see what you were looking at:
 - `why` — the lesson: what the code actually does, in two or three sentences. It is
   required whenever the verdict is not "correct", and it is the whole answer when you said
   you did not know. Grading that only marks you down is not teaching.
+- `docs` — where to read more. These come from a table keyed by concept namespace, not
+  from the model, because a study tool that invents URLs is worse than one that says
+  nothing; a corpus author can add their own with `docs = [{ title = "…", url = "…" }]`.
 
 ```sh
 readcode --snippet 002     # a specific snippet (id, or any unambiguous suffix)
@@ -279,6 +282,8 @@ Snippet:
   *is*. Both are descriptive; the app already explains what the learner has to do.
 - `asks` — optional: `"blocks"`, `"lines"` or `"auto"` (default: lines if the snippet has
   `blocks.line` entries, otherwise blocks).
+- `docs = [{ title, url }]` — optional: reading for this snippet specifically, shown in
+  the review above the per-concept links.
 - `level` — optional: the rung this snippet is written for, 1 to 5. Omit it and the snippet
   is offered to everyone, which is the right default for a small personal corpus.
 - `levels = [from, to]` — optional: a band, for a simple idea shown in code that is harder
@@ -348,7 +353,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 136 tests, no network, no agent
+cargo test                        # 144 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

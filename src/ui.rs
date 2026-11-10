@@ -322,6 +322,12 @@ pub fn print_grade(
                 writeln!(out, "    {} {}", style.cyan("why"), line)?;
             }
         }
+        if let Some(prompt) = prompts.get(graded.prompt) {
+            for doc in crate::docs::for_concepts(prompt.concepts.iter().map(String::as_str)) {
+                writeln!(out, "    {} {}", style.dim("docs ·"), style.dim(&doc.title))?;
+                writeln!(out, "           {}", style.dim(&doc.url))?;
+            }
+        }
     }
 
     if !grade.summary.is_empty() {
