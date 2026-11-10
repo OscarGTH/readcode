@@ -28,17 +28,40 @@ use readcode::tui;
 const WIDTH: u16 = 104;
 const HEIGHT: u16 = 24;
 
-/// The answers a real sitting produced for rust-005, so the frame shows an honest
-/// mid-sitting state rather than invented prose.
-const ANSWERS: &[&str] = &[
-    "brings HashMap into scope",
-    "the returned map borrows from text, so its lifetime is tied to the input",
-    "counts has to be mutable because the loop inserts into it",
-    "for drives the iterator and split_whitespace yields each word",
-];
-
-const TYPING: &str = "entry looks the key up, or_insert puts 0 in when it";
-const LAST: &str = "the tail expression moves counts out as the return value";
+/// Answers a real sitting produced, so the frame shows an honest mid-sitting state
+/// rather than invented prose.
+fn answers_for(snippet: &str, asks: Asks) -> (&'static [&'static str], &'static str) {
+    if snippet.starts_with("rust-006") && asks == Asks::Blocks {
+        return (
+            &[
+                "defines a main function, which is where the program starts",
+                "binds apples to 3 and pears to 2",
+                "adds the two bindings into a new one called total",
+            ],
+            "prints the total, capturing it by name from the surrounding scope",
+        );
+    }
+    if snippet.starts_with("rust-006") {
+        (
+            &[
+                "defines a main function which is the entry point for the program",
+                "defines a variable apples and assigns the number 3 to it",
+                "same as line 2 but for pears, and it is 2",
+            ],
+            "sums the two bindings into a new one called total",
+        )
+    } else {
+        (
+            &[
+                "brings HashMap into scope",
+                "the returned map borrows from text, so its lifetime is tied to the input",
+                "counts has to be mutable because the loop inserts into it",
+                "for drives the iterator and split_whitespace yields each word",
+            ],
+            "entry looks the key up, or_insert puts 0 in when it",
+        )
+    }
+}
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -49,20 +72,23 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("/tmp/frame.json"));
 
     let corpus = Corpus::builtin()?;
-    let snippet = corpus.find("005")?;
-    let prompts = snippet.prompts(Asks::Lines);
-    let mut app = tui::App::new(snippet, prompts, Asks::Lines, reviewer_label());
+    let snippet = corpus.find(args.get(4).map(String::as_str).unwrap_or("005"))?;
+    let asks = match args.get(5).map(String::as_str) {
+        Some("blocks") => Asks::Blocks,
+        _ => Asks::Lines,
+    };
+    let prompts = snippet.prompts(asks);
+    let mut app = tui::App::new(snippet, prompts, asks, reviewer_label());
 
-    for answer in ANSWERS {
+    let (answers, typing) = answers_for(&snippet.id, asks);
+    for answer in answers {
         type_text(&mut app, answer);
         app.on_key(tui::Key::Enter);
     }
-    type_text(&mut app, TYPING);
+    type_text(&mut app, typing);
 
     if mode == "review" {
         // Finish the sitting, so the review covers every prompt.
-        app.on_key(tui::Key::Enter);
-        type_text(&mut app, LAST);
         app.on_key(tui::Key::Enter);
 
         let reviewer = build_reviewer()?;

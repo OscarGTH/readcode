@@ -110,16 +110,26 @@ what was right, what was thin, and what you missed:
 ![The review: for each prompt, the code it was about, your answer, the verdict, what you missed, and the explanation](docs/tui-review.png)
 
 Each entry keeps the code beside your answer, because the moment you want to know *why*
-something was wrong is the moment you need to see what you were looking at:
+something was wrong is the moment you need to see what you were looking at. The verdict
+rides the line it is about, so one prompt is one block rather than a heading followed by
+the code it describes:
 
-- `you` — your words, however you wrote them
-- `review` — the verdict on those words
-- `missed · …` — something the answer did not mention; a concept the reviewer could not
-  judge from that answer is left out rather than marked "unknown", since a line is only
-  asked to prove what it can show
-- `why` — the lesson: what the code actually does, in two or three sentences. It is
-  required whenever the verdict is not "correct", and it is the whole answer when you said
-  you did not know. Grading that only marks you down is not teaching.
+- `✓ 4 │ let total = apples + pears;` — the mark is the verdict, the line is what you read
+- `you` — your words, under the code they explain
+- `review` — only when something was off: what the answer did and did not say
+- `missed · …` — the points it left out; a concept the reviewer could not judge from that
+  answer is left out rather than marked "unknown", since a line is only asked to prove what
+  it can show
+- `why` — the lesson: what the code actually does, in two or three sentences. Required
+  whenever the verdict is not "correct", and the whole answer when you said you did not
+  know. Grading that only marks you down is not teaching.
+
+A correct line stops at `you`: praise is not information, and a review you have to scroll
+through is one you stop reading. Reading comes once, at the end of the sitting, deduplicated
+by topic — from a table keyed by concept namespace rather than from the model, because a
+study tool that invents URLs is worse than one that stays quiet. A corpus author can add
+their own with `docs = [{ title = "…", url = "…" }]`.
+
 ### When grading fails
 
 A reviewer that answers with broken JSON does not cost you the sitting. The reply is read
@@ -130,10 +140,6 @@ the full-screen view the failure leaves your answers on screen with `r` to try a
 
 If it keeps failing, the error names what the parser objected to and writes the reviewer's
 whole reply to `$TMPDIR/readcode-last-reply.txt`, which is the file worth reporting.
-
-- `docs` — where to read more. These come from a table keyed by concept namespace, not
-  from the model, because a study tool that invents URLs is worse than one that says
-  nothing; a corpus author can add their own with `docs = [{ title = "…", url = "…" }]`.
 
 ```sh
 readcode --snippet 002     # a specific snippet (id, or any unambiguous suffix)

@@ -152,7 +152,7 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(title), left);
 
     let progress = match app.phase {
-        Phase::Review => " review".to_string(),
+        Phase::Review => String::new(),
         _ => format!("{} · {}/{}", mode, app.index + 1, app.prompts.len()),
     };
     frame.render_widget(
@@ -363,7 +363,7 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(" your answers are still here · ", Theme::dim()),
                 Span::styled("r", Theme::note()),
                 Span::styled(" tries the reviewer again · ", Theme::dim()),
-                Span::styled("Enter", Theme::note()),
+                Span::styled("Enter", Theme::dim()),
                 Span::styled(" gives up", Theme::dim()),
             ]),
         ]);
@@ -389,65 +389,46 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
             Verdict::Unknown => 3,
         }] += 1;
     }
-    rows.push(Line::from(vec![
+    // Only the verdicts that happened: "0 wrong 0 unknown" is not information.
+    let mut summary = vec![
         Span::styled(" review · ", Theme::title()),
         Span::styled(grade.reviewer.clone(), Theme::dim()),
-        Span::styled(" · ", Theme::hint()),
-        Span::styled(
-            format!("{} correct ", counts[0]),
-            Theme::verdict(Verdict::Correct),
-        ),
-        Span::styled(
-            format!("{} partial ", counts[1]),
-            Theme::verdict(Verdict::Partial),
-        ),
-        Span::styled(
-            format!("{} wrong ", counts[2]),
-            Theme::verdict(Verdict::Wrong),
-        ),
-        Span::styled(
-            format!("{} unknown", counts[3]),
-            Theme::verdict(Verdict::Unknown),
-        ),
-    ]));
-    rows.push(Line::raw(""));
+    ];
+    for (index, verdict) in [
+        Verdict::Correct,
+        Verdict::Partial,
+        Verdict::Wrong,
+        Verdict::Unknown,
+    ]
+    .iter()
+    .enumerate()
+    {
+        if counts[index] > 0 {
+            summary.push(Span::styled(" · ", Theme::hint()));
+            summary.push(Span::styled(
+                format!("{} {}", counts[index], verdict_name(*verdict)),
+                Theme::verdict(*verdict),
+            ));
+        }
+    }
+    rows.push(Line::from(summary));
 
     for graded in &grade.prompts {
         let Some(prompt) = app.prompts.get(graded.prompt) else {
             continue;
         };
-        rows.push(Line::from(vec![
-            Span::styled(
-                format!(" {} ", verdict_mark(graded.verdict)),
-                Theme::verdict(graded.verdict),
-            ),
-            Span::styled(
-                format!("prompt {} · {}", graded.prompt + 1, prompt.span_label()),
-                Theme::title(),
-            ),
-            Span::styled(
-                format!("  {}", verdict_name(graded.verdict)),
-                Theme::verdict(graded.verdict),
-            ),
-        ]));
-        // Concept-by-concept detail only earns its space when it disagrees with
-        // the prompt's overall verdict; otherwise the header already said it.
-        let nuanced = graded
-            .concepts
-            .iter()
-            .any(|(_, verdict)| *verdict != graded.verdict);
-        if nuanced {
-            for (concept, verdict) in &graded.concepts {
-                rows.push(Line::from(vec![
-                    Span::styled("     ", Theme::hint()),
-                    Span::styled(format!("{concept:<30}"), Theme::dim()),
-                    Span::styled(verdict_name(*verdict).to_string(), Theme::verdict(*verdict)),
-                ]));
-            }
-        }
         rows.push(Line::raw(""));
-
-        code_rows(&mut rows, &tokens, gutter, prompt.start, prompt.end);
+        // The verdict sits on the first code row, so one prompt is one block
+        // rather than a header followed by the code it describes.
+        code_rows(
+            &mut rows,
+            &tokens,
+            gutter,
+            prompt.start,
+            prompt.end,
+            verdict_mark(graded.verdict),
+            graded.verdict,
+        );
 
         let answer = app
             .answers
@@ -455,15 +436,26 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
             .map(|text| text.trim())
             .filter(|text| !text.is_empty())
             .unwrap_or("(left blank)");
-        labelled(
-            &mut rows,
-            "you",
-            answer,
-            Theme::note(),
-            Theme::note(),
-            width,
-        );
+        labelled(&mut rows, "you", answer, Theme::dim(), Theme::note(), width);
 
+        // A correct answer needs no review and no lesson: the praise is noise,
+        // and the lesson is for the lines that did not land.
+        if graded.verdict == Verdict::Correct {
+            continue;
+        }
+        let nuanced = graded
+            .concepts
+            .iter()
+            .any(|(_, verdict)| *verdict != graded.verdict);
+        if nuanced {
+            for (concept, verdict) in &graded.concepts {
+                rows.push(Line::from(vec![
+                    Span::styled("      ", Theme::hint()),
+                    Span::styled(format!("{concept:<30}"), Theme::dim()),
+                    Span::styled(verdict_name(*verdict).to_string(), Theme::verdict(*verdict)),
+                ]));
+            }
+        }
         if !graded.feedback.trim().is_empty() {
             labelled(
                 &mut rows,
@@ -474,11 +466,11 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
                 width,
             );
         }
-        for missing in &graded.missing {
+        if !graded.missing.is_empty() {
             labelled(
                 &mut rows,
                 "missed",
-                missing,
+                &graded.missing.join(" · "),
                 Theme::verdict(Verdict::Partial),
                 Theme::dim(),
                 width,
@@ -494,18 +486,30 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
                 width,
             );
         }
+    }
+
+    // Reading, once for the whole sitting rather than twice under every prompt.
+    let mut seen: Vec<crate::docs::Doc> = Vec::new();
+    for prompt in &app.prompts {
         for doc in reading(app, prompt) {
-            labelled(
-                &mut rows,
-                "docs",
-                &doc.title,
-                Theme::dim(),
-                Theme::dim(),
-                width,
-            );
-            labelled(&mut rows, "", &doc.url, Theme::hint(), Theme::hint(), width);
+            if !seen.iter().any(|existing| existing.url == doc.url) {
+                seen.push(doc);
+            }
         }
+    }
+    if !seen.is_empty() {
         rows.push(Line::raw(""));
+        rows.push(Line::from(Span::styled(" read more", Theme::dim())));
+        for doc in seen.iter().take(6) {
+            rows.push(Line::from(vec![
+                Span::styled("   ", Theme::hint()),
+                Span::styled(doc.title.clone(), Theme::dim()),
+            ]));
+            rows.push(Line::from(vec![
+                Span::styled("   ", Theme::hint()),
+                Span::styled(doc.url.clone(), Theme::hint()),
+            ]));
+        }
     }
 
     let height = area.height as usize;
@@ -549,6 +553,8 @@ fn code_rows(
     gutter: usize,
     start: usize,
     end: usize,
+    mark: &str,
+    verdict: Verdict,
 ) {
     let shown: Vec<usize> = if end - start < REVIEW_CODE_LINES {
         (start..=end).collect()
@@ -567,10 +573,21 @@ fn code_rows(
                 Theme::hint(),
             )));
         }
+        let first = previous.is_none();
         previous = Some(number);
+        // The mark belongs to the prompt, so it rides the first row of its code.
+        let lead = if first {
+            mark.to_string()
+        } else {
+            " ".to_string()
+        };
         let mut spans = vec![Span::styled(
-            format!("    {number:>gutter$} │ "),
-            Theme::gutter(),
+            format!("  {lead}{number:>gutter$} │ "),
+            if first {
+                Theme::verdict(verdict)
+            } else {
+                Theme::gutter()
+            },
         )];
         for (token, text) in tokens.get(number - 1).into_iter().flatten() {
             spans.push(Span::styled(text.clone(), token_style(*token)));
@@ -882,27 +899,95 @@ mod tests {
         let screen = screen(&app, 96, 34);
 
         assert!(screen.contains("review · acp:opencode"), "{screen}");
-        assert!(screen.contains("1 correct"), "{screen}");
-        assert!(screen.contains("1 partial"), "{screen}");
-        // The code the answer was about, so it can be compared.
+        // Only the verdicts that happened; "0 wrong 0 unknown" is not information.
+        assert!(screen.contains("1 correct · 1 partial"), "{screen}");
+        assert!(!screen.contains("0 wrong"), "{screen}");
+        assert!(!screen.contains("0 unknown"), "{screen}");
+        // The verdict rides the code row, so one prompt is one block.
         assert!(
-            screen.contains("use std::collections::HashMap;"),
+            screen.contains("✓ 1 │ use std::collections::HashMap;"),
             "{screen}"
         );
-        assert!(screen.contains("fn count_words"), "{screen}");
+        assert!(screen.contains("~ 3 │ fn count_words"), "{screen}");
         // The learner's own words, and the lesson when the answer fell short.
         assert!(screen.contains("you"), "{screen}");
-        assert!(screen.contains("a"), "{screen}");
         assert!(screen.contains("missed"), "{screen}");
         assert!(screen.contains("why the map"), "{screen}");
         assert!(
             screen.contains("The map stores borrows of the input text"),
             "{screen}"
         );
-        // Somewhere to read more, without asking a model for a URL.
-        assert!(screen.contains("docs"), "{screen}");
+        // Reading, once for the sitting.
+        assert_eq!(screen.matches("read more").count(), 1, "{screen}");
         assert!(screen.contains("doc.rust-lang.org"), "{screen}");
         assert!(screen.contains("ch10-03"), "the lifetime chapter: {screen}");
+    }
+
+    #[test]
+    fn a_correct_answer_is_just_the_line_and_what_was_said() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("006").unwrap();
+        let mut app = app_with_answer(snippet);
+        let prompt = app.prompts[0].clone();
+        let grade = Grade {
+            reviewer: "acp:opencode".into(),
+            summary: String::new(),
+            prompts: vec![PromptGrade {
+                prompt: 0,
+                verdict: Verdict::Correct,
+                concepts: vec![(prompt.concepts[0].clone(), Verdict::Correct)],
+                feedback: "Spot on — `main` is the entry point where execution begins.".into(),
+                missing: vec![],
+                teach: Some("`main` is where the program starts.".into()),
+            }],
+        };
+        app.finish(grade);
+        let screen = screen(&app, 96, 26);
+
+        assert!(screen.contains("✓ 1 │ fn main() {"), "{screen}");
+        // Praise and a lesson on a correct line are clutter, so neither appears.
+        assert!(!screen.contains("Spot on"), "{screen}");
+        assert!(!screen.contains("why"), "{screen}");
+        assert!(!screen.contains("review  "), "{screen}");
+    }
+
+    #[test]
+    fn a_shared_topic_is_read_more_once() {
+        let corpus = Corpus::builtin().unwrap();
+        // 006's lines 2 and 3 both teach mutability, so both map to one page.
+        let snippet = corpus.find("006").unwrap();
+        let mut app = app_with_answer(snippet);
+        app.on_key(Key::Char('x'));
+        app.on_key(Key::Enter);
+        let grade = Grade {
+            reviewer: "acp:opencode".into(),
+            summary: String::new(),
+            prompts: vec![
+                PromptGrade {
+                    prompt: 0,
+                    verdict: Verdict::Correct,
+                    concepts: vec![(app.prompts[0].concepts[0].clone(), Verdict::Correct)],
+                    feedback: String::new(),
+                    missing: vec![],
+                    teach: None,
+                },
+                PromptGrade {
+                    prompt: 1,
+                    verdict: Verdict::Partial,
+                    concepts: vec![(app.prompts[1].concepts[0].clone(), Verdict::Partial)],
+                    feedback: String::new(),
+                    missing: vec![],
+                    teach: None,
+                },
+            ],
+        };
+        app.finish(grade);
+        let screen = screen(&app, 96, 26);
+        assert_eq!(
+            screen.matches("ch03-01-variables-and-mutability").count(),
+            1,
+            "the page for `let` should be listed once:\n{screen}"
+        );
     }
 
     #[test]
