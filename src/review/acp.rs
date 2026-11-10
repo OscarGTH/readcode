@@ -182,6 +182,13 @@ impl AcpClient {
         Ok(self.session_id.as_deref().unwrap_or_default())
     }
 
+    /// The model this session is on, from `session/new`'s `configOptions`.
+    pub fn current_model(&self) -> Option<String> {
+        model_options(&self.config_options)
+            .map(|(current, _)| current)
+            .filter(|current| !current.is_empty())
+    }
+
     pub fn set_config_option(&mut self, config_id: &str, value: &str) -> Result<()> {
         let session = self.session_id.clone().context("no ACP session is open")?;
         self.request(
@@ -502,13 +509,6 @@ pub struct ModelOption {
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ModelPlan {
-    Keep,
-    Switch { from: String, to: String },
-    WarnOnlyFree { current: String },
-}
-
 /// Reads the `model` select out of `session/new`'s `configOptions`, flattening
 /// grouped options. Returns `(current value, every option)`.
 pub fn model_options(config_options: &Value) -> Option<(String, Vec<ModelOption>)> {
@@ -557,34 +557,6 @@ pub fn is_free_model(value: &str, name: &str) -> bool {
             .any(|marker| name.contains(marker))
 }
 
-/// The rule for a session that opened on the agent's default model: if that
-/// default is a free, shared-queue model, move to the first paid one and say so.
-pub fn plan_for_default(current: Option<&str>, options: &[ModelOption]) -> ModelPlan {
-    let Some(current) = current.filter(|c| !c.is_empty()) else {
-        return ModelPlan::Keep;
-    };
-    let current_name = options
-        .iter()
-        .find(|option| option.value == current)
-        .map(|option| option.name.clone())
-        .unwrap_or_else(|| current.to_string());
-    if !is_free_model(current, &current_name) {
-        return ModelPlan::Keep;
-    }
-    match options
-        .iter()
-        .find(|option| !is_free_model(&option.value, &option.name))
-    {
-        Some(paid) => ModelPlan::Switch {
-            from: current.to_string(),
-            to: paid.value.clone(),
-        },
-        None => ModelPlan::WarnOnlyFree {
-            current: current.to_string(),
-        },
-    }
-}
-
 /// Grades through the user's own agent. One agent process per grade: the CLI
 /// grades a single snippet per run, so the ~2 s handshake is paid once.
 pub struct AcpReviewer {
@@ -628,27 +600,25 @@ impl AcpReviewer {
 
         match &self.model {
             Some(model) => {
-                if let Err(error) = client.set_config_option("model", model) {
-                    eprintln!("readcode: could not select model `{model}`: {error}");
-                }
+                // An explicit choice is the only way a model is selected. If the
+                // agent refuses it, say so and stop rather than grading on
+                // something the user did not ask for.
+                client
+                    .set_config_option("model", model)
+                    .with_context(|| format!("the agent refused the model `{model}`"))?;
             }
             None => {
+                // Never switch silently. Name what it will use and how to pin it.
                 if let Some((current, options)) = model_options(&client.config_options) {
-                    match plan_for_default(Some(&current), &options) {
-                        ModelPlan::Keep => {}
-                        ModelPlan::Switch { from, to } => {
-                            eprintln!(
-                                "readcode: the agent defaults to `{from}`, a free shared-queue model; switching to `{to}` for this run (set READCODE_MODEL to choose)"
-                            );
-                            if let Err(error) = client.set_config_option("model", &to) {
-                                eprintln!("readcode: could not switch model: {error}");
-                            }
-                        }
-                        ModelPlan::WarnOnlyFree { current } => {
-                            eprintln!(
-                                "readcode: every model this agent offers is a free tier (`{current}`); expect slow, variable answers. Set READCODE_MODEL to a paid model."
-                            );
-                        }
+                    let name = options
+                        .iter()
+                        .find(|option| option.value == current)
+                        .map(|option| option.name.clone())
+                        .unwrap_or_else(|| current.clone());
+                    if is_free_model(&current, &name) {
+                        eprintln!(
+                            "readcode: grading with `{current}` — a free shared-queue model, so expect slow, variable answers. Pin one with `--model <id>` or READCODE_MODEL; `readcode models` lists what this agent offers."
+                        );
                     }
                 }
             }
@@ -656,11 +626,44 @@ impl AcpReviewer {
 
         Ok(client)
     }
+
+    /// Opens a session and reports the models this agent offers. No prompt is
+    /// sent, so it spends no tokens.
+    pub fn list_models(&self) -> Result<AgentModels> {
+        let mut client = AcpClient::spawn(&self.program, &self.args, &self.cwd, self.timeout)?;
+        client.initialize()?;
+        client.new_session(&self.cwd)?;
+        let (current, options) = model_options(&client.config_options)
+            .context("this agent does not offer a model choice for the session")?;
+        Ok(AgentModels {
+            agent: format!("{} {}", client.agent_name, client.agent_version),
+            current,
+            options,
+        })
+    }
+}
+
+/// What an agent will let you choose from.
+pub struct AgentModels {
+    pub agent: String,
+    pub current: String,
+    pub options: Vec<ModelOption>,
+}
+
+impl AcpReviewer {
+    /// `acp:opencode (deepseek/deepseek-v4-pro)`: the agent, plus whatever model
+    /// actually answered. Kept in one place so the header and the review agree.
+    fn label(&self, model: Option<&str>) -> String {
+        match model.filter(|model| !model.is_empty()) {
+            Some(model) => format!("acp:{} ({model})", self.program),
+            None => format!("acp:{}", self.program),
+        }
+    }
 }
 
 impl Reviewer for AcpReviewer {
     fn name(&self) -> String {
-        format!("acp:{}", self.program)
+        self.label(self.model.as_deref())
     }
 
     fn grade(
@@ -675,6 +678,12 @@ impl Reviewer for AcpReviewer {
         let raw = parse_json_object(&text)
             .with_context(|| format!("the agent ({}) did not return a grade", client.agent_name))?;
         let mut grade = Grade::from_raw(prompts, raw, &self.name())?;
+        // When nothing was pinned, name the model the session reports it is on.
+        // When one was pinned, keep it: `current_model` reflects the session's
+        // opening config, not the option we set.
+        if self.model.is_none() {
+            grade.reviewer = self.label(client.current_model().as_deref());
+        }
         if !client.refusals.is_empty() {
             grade.summary = format!(
                 "{} (refused tool use: {})",
@@ -750,52 +759,14 @@ concepts = ["rust.binding"]
     }
 
     #[test]
-    fn model_plan_keeps_a_paid_default() {
-        let options = vec![
-            ModelOption {
-                value: "paid/a".into(),
-                name: "A".into(),
-            },
-            ModelOption {
-                value: "free/big-pickle".into(),
-                name: "Big Pickle (free)".into(),
-            },
-        ];
-        assert_eq!(plan_for_default(Some("paid/a"), &options), ModelPlan::Keep);
-        assert_eq!(
-            plan_for_default(Some("free/big-pickle"), &options),
-            ModelPlan::Switch {
-                from: "free/big-pickle".into(),
-                to: "paid/a".into()
-            }
-        );
-    }
+    fn the_reviewer_name_names_the_model_only_when_one_was_asked_for() {
+        let mut reviewer = AcpReviewer::from_env(std::path::PathBuf::from("/tmp"));
+        reviewer.program = "opencode".to_string();
+        reviewer.model = None;
+        assert_eq!(reviewer.name(), "acp:opencode");
 
-    #[test]
-    fn model_plan_warns_when_everything_is_free() {
-        let options = vec![ModelOption {
-            value: "free/big-pickle".into(),
-            name: "Big Pickle (free)".into(),
-        }];
-        assert_eq!(
-            plan_for_default(Some("free/big-pickle"), &options),
-            ModelPlan::WarnOnlyFree {
-                current: "free/big-pickle".into()
-            }
-        );
-    }
-
-    #[test]
-    fn unknown_models_are_left_alone() {
-        let options = vec![ModelOption {
-            value: "acme/opus".into(),
-            name: "Opus".into(),
-        }];
-        assert_eq!(
-            plan_for_default(Some("acme/opus"), &options),
-            ModelPlan::Keep
-        );
-        assert_eq!(plan_for_default(None, &options), ModelPlan::Keep);
+        reviewer.model = Some("deepseek/deepseek-v4-pro".to_string());
+        assert_eq!(reviewer.name(), "acp:opencode (deepseek/deepseek-v4-pro)");
     }
 
     #[test]
@@ -904,14 +875,10 @@ concepts = ["rust.binding"]
         client.new_session(Path::new("/tmp")).unwrap();
         assert_eq!(client.session_id.as_deref(), Some("ses_1"));
 
-        let (current, options) = model_options(&client.config_options).unwrap();
-        assert_eq!(
-            plan_for_default(Some(&current), &options),
-            ModelPlan::Switch {
-                from: "free/big-pickle".into(),
-                to: "paid/model".into()
-            }
-        );
+        // The session reports what it is on; nothing switches behind the user's back.
+        assert_eq!(client.current_model().as_deref(), Some("free/big-pickle"));
+        let (_, options) = model_options(&client.config_options).unwrap();
+        assert!(options.iter().any(|option| option.value == "paid/model"));
 
         let text = client.prompt("grade this").unwrap();
         let raw = parse_json_object(&text).unwrap();

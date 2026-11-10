@@ -2,7 +2,7 @@ id = "rust-004"
 language = "rust"
 title = "A struct with behaviour: impl, &mut self and a loop"
 source = "the shape of most small Rust types"
-intro = "State plus methods plus a loop. Say who is allowed to mutate what."
+intro = "A struct with one mutating method, driven by a loop that checks its return value."
 
 code = '''
 #[derive(Default)]

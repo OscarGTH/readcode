@@ -16,6 +16,7 @@ CODES = {
     "31": "red",
     "32": "green",
     "33": "yellow",
+    "34": "blue",
     "35": "magenta",
     "36": "cyan",
 }
@@ -128,7 +129,7 @@ def render(lines):
             escaped = html.escape(text).replace(" ", "&nbsp;")
             spans.append(f'<span class="{style}">{escaped}</span>' if style else escaped)
         body.append(f'<div class="ln">{"".join(spans) or "&nbsp;"}</div>')
-    return "\n".join(body)
+    return "".join(body)
 
 
 def group(line):
@@ -182,6 +183,7 @@ PAGE = """<!doctype html>
   .c-red {{ color: #f85149; }}
   .c-yellow {{ color: #d29922; }}
   .c-magenta {{ color: #bc8cff; }}
+  .c-blue {{ color: #58a6ff; }}
   .c-cyan {{ color: #39c5cf; }}
 </style>
 <div class="window">

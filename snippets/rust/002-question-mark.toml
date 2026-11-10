@@ -2,7 +2,7 @@ id = "rust-002"
 language = "rust"
 title = "The `?` operator: turning errors into early returns"
 source = "idiomatic Rust built on std::fs and std::str::FromStr"
-intro = "`?` looks like punctuation but it hides a match. Annotate where the error actually goes."
+intro = "Error handling with `?`: two fallible calls in one function, and a `main` that may fail."
 
 code = '''
 use std::fs;

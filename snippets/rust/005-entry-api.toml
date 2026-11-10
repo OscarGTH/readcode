@@ -2,7 +2,7 @@ id = "rust-005"
 language = "rust"
 title = "Counting words with the entry API"
 source = "the shape of every word-count in Rust"
-intro = "Five lines, four ideas. This one is asked line by line, because each line hides something."
+intro = "Counting words with the `entry` API — every line does something different."
 
 code = '''
 use std::collections::HashMap;

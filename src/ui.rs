@@ -58,6 +58,16 @@ impl Style {
     pub fn magenta(&self, text: &str) -> String {
         self.paint("35", text)
     }
+
+    pub fn blue(&self, text: &str) -> String {
+        self.paint("34", text)
+    }
+}
+
+/// The snippet's source, syntax-highlighted once so every view shares it.
+fn highlighted(snippet: &Snippet, style: Style) -> Vec<String> {
+    let lines = snippet.code_lines();
+    crate::highlight::highlight(&lines, style)
 }
 
 pub fn verdict_label(style: Style, verdict: Verdict) -> String {
@@ -108,7 +118,7 @@ pub fn print_header(out: &mut dyn Write, style: Style, snippet: &Snippet) -> io:
 /// The whole snippet, grouped by block. Line mode shows this once, so the
 /// learner has the surrounding code while answering one line at a time.
 pub fn print_code(out: &mut dyn Write, style: Style, snippet: &Snippet) -> io::Result<()> {
-    let lines = snippet.code_lines();
+    let lines = highlighted(snippet, style);
     let width = gutter_width(snippet);
     for (index, block) in snippet.blocks.iter().enumerate() {
         let (start, end) = (block.lines[0], block.lines[1]);
@@ -143,7 +153,7 @@ pub fn print_block(
         return Ok(());
     };
     let (start, end) = (block.lines[0], block.lines[1]);
-    let lines = snippet.code_lines();
+    let lines = highlighted(snippet, style);
     let width = gutter_width(snippet);
     writeln!(
         out,
@@ -183,7 +193,11 @@ pub fn print_line_prompt(
         format!("┌ line {number} · {concepts}")
     };
     writeln!(out, "{}", style.cyan(&header))?;
-    for (offset, line) in prompt.lines.iter().enumerate() {
+    let painted = crate::highlight::highlight(
+        &prompt.lines.iter().map(String::as_str).collect::<Vec<_>>(),
+        style,
+    );
+    for (offset, line) in painted.iter().enumerate() {
         writeln!(
             out,
             "{} {}",

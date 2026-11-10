@@ -87,6 +87,8 @@ enum Command {
     List,
     /// Validate the corpus: every line covered, ids unique, rubrics complete.
     Check,
+    /// List the models the configured agent offers, and which one it is on.
+    Models,
     /// Run the grading eval suite (see evals/).
     Eval {
         /// Which reviewer to measure (default: the deterministic mock).
@@ -239,6 +241,48 @@ fn main() -> Result<()> {
                 println!("{} {problem}", style.red("✗"));
             }
             bail!("{} problem(s) in the corpus", problems.len());
+        }
+
+        Command::Models => {
+            let agent_cwd = data_dir.join("agent");
+            std::fs::create_dir_all(&agent_cwd).ok();
+            let reviewer = AcpReviewer::from_env(agent_cwd);
+            let models = reviewer
+                .list_models()
+                .context("cannot ask the agent for its models")?;
+
+            println!("{}", style.bold(&format!("agent · {}", models.agent)));
+            println!(
+                "{}",
+                style.dim(&format!(
+                    "current · {}",
+                    if models.current.is_empty() {
+                        "(none reported)"
+                    } else {
+                        &models.current
+                    }
+                ))
+            );
+            println!();
+            for option in &models.options {
+                let mark = if option.value == models.current {
+                    style.green("*")
+                } else {
+                    " ".to_string()
+                };
+                let free = if readcode::review::acp::is_free_model(&option.value, &option.name) {
+                    style.dim("  free tier")
+                } else {
+                    String::new()
+                };
+                println!("{mark} {:<42} {}{free}", option.value, option.name);
+            }
+            println!();
+            println!(
+                "{}",
+                style.dim("pin one with --model <id>, or READCODE_MODEL=<id>")
+            );
+            Ok(())
         }
 
         Command::Eval {

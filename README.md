@@ -47,6 +47,7 @@ Then everyday:
 readcode            # annotate the snippet that is most due
 readcode status     # what you have mastered, what is due
 readcode list       # the snippets available
+readcode models     # which models your agent offers
 ```
 
 Progress is saved between runs, so `readcode` is the same command every day.
@@ -116,9 +117,15 @@ export READCODE_AGENT="opencode acp"     # or "copilot --acp", an adapter, ...
 readcode --reviewer acp
 ```
 
-`READCODE_MODEL` works for both backends. If the agent opens on a free shared-queue
-model, `readcode` switches to the first paid model it offers and tells you; your explicit
-`READCODE_MODEL` always wins.
+**Models are never picked for you.** `--model <id>` or `READCODE_MODEL=<id>` is the only
+way a model is chosen; without one, the agent's own default is used and the review line
+names whatever actually answered. If that default is a free shared-queue model, `readcode`
+says so once rather than switching behind your back. To see the options:
+
+```sh
+readcode models          # models the agent offers, with the current one marked
+readcode --model deepseek/deepseek-v4-pro
+```
 
 ## Adding your own corpus
 
@@ -201,7 +208,8 @@ Snippet:
 - `id` — unique; `--snippet` matches it, or its title. Prefix by language: `rust-001`.
 - `language`, `title` — shown in the header.
 - `code` — the code, in a TOML literal string (`'''`). Line numbers are 1-based.
-- `source`, `intro` — optional: provenance, and one line of framing.
+- `source`, `intro` — optional: where the code came from, and one line saying what it
+  *is*. Both are descriptive; the app already explains what the learner has to do.
 - `asks` — optional: `"blocks"`, `"lines"` or `"auto"` (default: lines if the snippet has
   `blocks.line` entries, otherwise blocks).
 
@@ -261,7 +269,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 86 tests, no network, no agent
+cargo test                        # 92 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

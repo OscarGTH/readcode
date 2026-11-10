@@ -13,6 +13,7 @@
 
 pub mod corpus;
 pub mod eval;
+pub mod highlight;
 pub mod review;
 pub mod session;
 pub mod snippet;

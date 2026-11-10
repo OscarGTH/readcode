@@ -2,7 +2,7 @@ id = "rust-003"
 language = "rust"
 title = "Iterator adaptors: a filter/map/collect chain"
 source = "idiomatic Rust over a slice of records"
-intro = "Chains read as a pipeline, but nothing runs until the end. Annotate where the work actually happens."
+intro = "A filter/map/collect chain that pulls the error messages out of a slice of log lines."
 
 code = '''
 #[derive(Debug)]
