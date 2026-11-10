@@ -3,30 +3,27 @@
 Learn a language by annotating real code, then get graded on it.
 
 `readcode` shows you a short piece of production-shaped code — sometimes block by block,
-sometimes line by line — and asks you to explain what each part does. When you are done, a reviewer marks every concept
-you were supposed to name: correct, partial, wrong, or unknown. Concepts you missed come
-back sooner — the same idea as Duolingo, aimed at *reading* code instead of writing it.
-
-The premise: you do not want to learn Rust by writing a toy app nobody needs. You want to
-understand the code you are already reviewing, reading and inheriting.
+sometimes line by line — and asks you to explain each part in your own words. A reviewer
+then marks every concept you were supposed to name: correct, partial, wrong, or unknown.
+Concepts you missed come back sooner. Duolingo, aimed at *reading* code instead of
+writing toy apps nobody needs.
 
 ```
-block 1 · lines 1-3
-What does `use` do, and why is the error type a `Box<dyn Error>` rather than a concrete error?
-> use brings fs into scope so we can write fs:: ; Box<dyn Error> hides which concrete error type it is
+┌ line 6 · rust.hashmap.entry, rust.deref.assign
+ 6 │         *counts.entry(word).or_insert(0) += 1;
+Unpack this line: the `*`, the `entry`, and the `or_insert`.
+> entry looks the key up and inserts a default 0 when it is missing, and the star
+> dereferences the mutable reference so we can add one
 > .
 ```
 
 ```
 review · acp:opencode
 
-  block 1 · lines 1-3 ~ partial
-    rust.use.import                    ✓ correct
-    rust.error.dynamic                 ~ partial
-    You correctly explain that `use` brings `fs` into scope and that `Box<dyn Error>` hides the
-    concrete type, but you don't say *why* it's erased — so `io::Error` and `ParseIntError` can
-    share one return type.
-    ! why both io::Error and ParseIntError can fit the same return type
+  prompt 5 · line 6 ✓ correct
+    rust.hashmap.entry                 ✓ correct
+    rust.deref.assign                  ✓ correct
+    You named the insert-on-missing behaviour and the deref behind the `*`.
 ```
 
 ## Install
@@ -35,100 +32,95 @@ review · acp:opencode
 cargo install --git https://github.com/OscarGTH/readcode
 ```
 
-or from a clone: `cargo build --release` and run `target/release/readcode`.
+Or from a clone: `cargo build --release`, then run `target/release/readcode`.
 
-## Use
+## Quick start
 
 ```sh
-readcode                     # annotate the snippet that is most due
-readcode --snippet 002       # a specific one
-readcode --lines             # force line-by-line (--blocks forces the other way)
-readcode status              # mastery per concept, what is due
-readcode list                # the corpus and its granularity
-readcode check               # validate your own snippets
-readcode eval                # grade the grader (see evals/)
-readcode reset --yes         # start over
+readcode            # annotate the snippet that is most due
+readcode status     # what you have mastered, what is due
+readcode list       # the snippets available
 ```
 
-While answering: `.` on its own line finishes a block, `:unknown` says you have no idea,
-`:quit` stops without saving.
+Progress is saved between runs, so `readcode` is the same command every day.
 
-Progress lives in `$XDG_DATA_HOME/readcode/progress.json` (override with `--data-dir`).
+## Using it
 
-## Blocks or lines
+Answer each question in your own words. A line containing only `.` finishes the answer;
+`:unknown` says you have no idea (that is a useful answer, not a failure); `:quit` stops
+without saving anything.
 
-Comprehension and attention to detail are different skills, so both are asked:
+```sh
+readcode --snippet 002     # a specific snippet (id, or any unambiguous suffix)
+readcode --lines           # force line-by-line; --blocks forces the other way
+readcode check             # validate your own snippet files
+readcode reset --yes       # wipe progress and start over
+```
 
-- **block mode** — one question per semantic block ("what does `shout` take, and what
-  does it give back?"). Tests whether you followed the shape of the code.
-- **line mode** — one question per significant line, with the closing braces skipped.
-  Tests whether you can say what line 6 does on its own. The whole snippet stays on
-  screen, because a single line needs its surroundings.
+### Blocks or lines
 
-The corpus decides: a snippet with authored line questions is asked line by line first.
-Either way the second visit **alternates** to the other granularity — same code, different
-question — and `--lines` / `--blocks` override it for a sitting.
+Comprehension and attention to detail are different skills, so the app asks both:
 
-Grading is identical in both modes: a prompt is a block or a line, and every prompt
-carries its own concepts and rubric. Line mode grades the same concept on several lines
-and takes the worst reading, which is what turns a half-understood line into `partial`
-instead of an undeserved `correct`.
+- **block by block** — one question per semantic block: "what does `shout` take, and what
+  does it give back?"
+- **line by line** — one question per significant line, with closing braces skipped and
+  the whole snippet kept on screen so a single line has its surroundings.
 
-## Three reviewers
+You do not choose: the first visit uses whatever the snippet is authored for, and the
+next visit to the same snippet **alternates** to the other mode. Same code, different
+question. `--lines` / `--blocks` override it for one sitting.
 
-| Backend | Needs | Grading quality |
+### Where progress lives
+
+`$XDG_DATA_HOME/readcode/progress.json`, or `~/.local/share/readcode/progress.json`.
+Override with `--data-dir <dir>` — handy for trying the app without touching your real
+progress.
+
+## Choosing a reviewer
+
+| `--reviewer` | Needs | What you get |
 |---|---|---|
-| `local` (default fallback) | nothing | keyword rubric: deterministic, offline, cannot credit phrasing it does not know |
-| `api` | one API key | model grades against the rubric, one HTTP call |
-| `acp` | an ACP agent on your machine | your own agent and subscription grade it; no API key at all |
+| `local` | nothing | offline keyword matching; instant and free, but it cannot credit an idea phrased differently |
+| `api` | one API key | a model grades against the same rubric, one HTTP call |
+| `acp` | an ACP agent on your machine | your own agent and subscription do the grading; no API key |
 
-Pick with `--reviewer local|api|acp`, or set `READCODE_REVIEWER`. Auto-detection prefers
-a configured agent, then an API key, then the offline rubric.
+Auto-detection prefers a configured agent, then an API key, then the offline reviewer.
+`READCODE_REVIEWER=acp` sets it permanently.
+
+**With an API key** (OpenAI- or Anthropic-compatible, including local servers):
 
 ```sh
-# BYOK — OpenAI-compatible or Anthropic-compatible
-export READCODE_API_KEY=sk-...          # or OPENAI_API_KEY / ANTHROPIC_API_KEY
-export READCODE_MODEL=gpt-4o-mini       # optional
-export READCODE_API_BASE=https://api.openai.com/v1   # optional, for any compatible endpoint
-export READCODE_API_STYLE=openai        # openai | anthropic
-
-# your own agent over ACP
-export READCODE_AGENT="opencode acp"    # any ACP agent: `copilot --acp`, an adapter, ...
-readcode --reviewer acp
-
-# offline
-readcode --offline
+export READCODE_API_KEY=sk-...
+export READCODE_MODEL=gpt-4o-mini                     # optional
+export READCODE_API_BASE=http://localhost:11434/v1    # optional
+export READCODE_API_STYLE=openai                      # openai | anthropic
 ```
 
-### Why ACP and not just an API key
+**With your own agent** (anything that speaks ACP):
 
-Many people cannot get an API key (work laptops, no card) but already pay for a coding
-agent. ACP is JSON-RPC over the agent's stdin/stdout, so `readcode` hosts the agent you
-already have instead of selling you a second subscription. The client is hand-written
-(~600 lines, no SDK) and tested against a fixture agent, so it cannot drift with a crate
-version.
+```sh
+export READCODE_AGENT="opencode acp"     # or "copilot --acp", an adapter, ...
+readcode --reviewer acp
+```
 
-Three things that are easy to get wrong, and how they are handled here:
+`READCODE_MODEL` works for both backends. If the agent opens on a free shared-queue
+model, `readcode` switches to the first paid model it offers and tells you; your explicit
+`READCODE_MODEL` always wins.
 
-* **ACP has no system prompt.** `session/new` accepts `cwd` and `mcpServers`, nothing else.
-  The grading contract is therefore prepended to the first prompt of the session
-  (`review/contract.rs`), and the same constant is the only text that defines grading for
-  all three backends.
-* **There is no approval UI in a CLI.** Permission requests are answered with the agent's
-  own reject option, and refusals are reported in the summary. An unanswered request
-  hangs the run forever, which looks exactly like a slow agent.
-* **`session/prompt` can resolve before the last `session/update`.** The turn is drained
-  until quiet before the JSON is parsed, because the alternative passes locally and loses
-  the closing text under load.
-* **The agent's default model is not your model.** `opencode` opens on a free
-  shared-queue model (`opencode/big-pickle`); on a session that did not pin a model,
-  `readcode` moves to the first paid model the agent advertises and says so. `READCODE_MODEL`
-  always wins.
+## Adding your own corpus
 
-## Writing your own snippets
+The built-in snippets are compiled into the binary, so plain `readcode` works anywhere.
+To use your own, point it at a directory of TOML files:
 
-`snippets/rust/*.toml` is the corpus, and it is compiled into the binary. Point
-`--corpus <dir>` at your own directory to load TOML files instead.
+```sh
+readcode --corpus ~/my-snippets
+readcode --corpus ~/my-snippets check      # validate before you study
+```
+
+Files are found recursively, so `~/my-snippets/rust/*.toml` and
+`~/my-snippets/python/*.toml` both work. One snippet per file; the `id` must be unique.
+
+### A minimal snippet
 
 ```toml
 id = "rust-001"
@@ -136,6 +128,7 @@ language = "rust"
 title = "Ownership: moving a String into a function"
 source = "adapted from The Rust Book, ch. 4.1"
 intro = "Say what each block does to the data."
+
 code = '''
 fn shout(mut text: String) -> String {
     text.push('!');
@@ -146,13 +139,48 @@ fn shout(mut text: String) -> String {
 [[blocks]]
 lines = [1, 4]
 ask = "What does `shout` take, and what does it give back?"
-concepts = ["rust.ownership.param", "rust.ownership.return"]
+concepts = ["rust.ownership.param", "rust.mut.param", "rust.ownership.return"]
   [[blocks.expects]]
   concept = "rust.ownership.param"
   keywords = ["takes ownership", "moved", "by value", "consumes"]
   note = "`String` is not `Copy`: passing it by value hands ownership to `shout`."
 
-  # Optional: ask this line on its own in line mode, with its own rubric.
+  [[blocks.expects]]
+  concept = "rust.mut.param"
+  keywords = ["mut", "mutable", "modify"]
+  note = "`mut text` makes the binding writable inside this function only."
+
+  [[blocks.expects]]
+  concept = "rust.ownership.return"
+  keywords = ["returns", "hands back", "tail"]
+  note = "The tail expression returns `text`, moving ownership back to the caller."
+```
+
+### Fields
+
+Snippet:
+
+- `id` — unique, and what `--snippet` matches. Prefix by language: `rust-001`.
+- `language`, `title` — shown in the header. `title` is also searched by `--snippet`.
+- `code` — the snippet itself, in a TOML literal string (`'''`). Line numbers are 1-based.
+- `source`, `intro` — optional. Where the code came from, and one line of framing.
+- `asks` — optional: `"blocks"`, `"lines"`, or `"auto"` (default). `auto` asks lines if
+  the snippet has line-level questions below, otherwise blocks.
+
+Blocks — every line of `code` must belong to exactly one block:
+
+- `lines = [start, end]` — 1-based, inclusive, in order, no gaps.
+- `ask` — the question the learner sees for that block.
+- `concepts = [...]` — what the learner must name. This is the unit of progress, not the
+  snippet: mastery and scheduling are tracked per concept, so reuse the same id whenever
+  the same idea appears in another snippet. Namespace them (`rust.ownership.move`).
+- `expects` — one entry per concept: `keywords` for the offline reviewer and `note`, the
+  correction shown when the concept is missed. Write the note as the thing you would say
+  to a colleague; the model reviewers use it as the ground truth too.
+
+Line-level questions — optional, and what makes a snippet good in line mode:
+
+```toml
   [[blocks.line]]
   at = 2
   ask = "Why is `mut` on the parameter, and who does it help?"
@@ -163,78 +191,70 @@ concepts = ["rust.ownership.param", "rust.ownership.return"]
     note = "`mut text` makes the binding writable inside this function only."
 ```
 
-* `lines` are 1-based and inclusive; every line must belong to exactly one block
-  (`readcode check` enforces it).
-* `concepts` are what the learner must name. They are the scheduling unit: mastery is
-  tracked per concept, not per snippet.
-* `expects` is the keyword rubric and the ground truth handed to model-backed reviewers,
-  so all three backends grade the same thing. Write the `note` as the correction you would
-  give a colleague — it is shown verbatim when the concept is missed.
-* `asks = "blocks" | "lines" | "auto"` sets the granularity (default `auto`). `blocks.line`
-  entries add line-level questions; lines without one inherit the block's question and
-  rubric, and blank lines or lone delimiters are never asked.
+- `at` is a single line inside the owning block. `ask` and `concepts` default to the
+  block's; `expects` defaults to the block's rubric filtered to those concepts.
+- Lines without a `blocks.line` entry still get a generic "what does line N do?" in line
+  mode, using the block's concepts. Blank lines and lone braces are never asked.
 
-## How the schedule works
+### Rules `readcode check` enforces
 
-Each concept carries a strength in `0..1` and a due time:
+- every code line belongs to exactly one block, in order, no gaps or overlaps
+- every block has an `ask` and at least one concept, and every concept has an `expects`
+  entry with at least one keyword
+- line questions sit inside their block, are not duplicated, and only use concepts the
+  block declares
+- ids are unique across the corpus
 
-* **correct** — strength `+ (1 - strength) * 0.40`, interval `×2.2` (1 day, capped at 120)
-* **partial** — `+15%` of the gap, interval `×1.3`
-* **wrong** — strength `×0.45`, back in 6 hours
-* **unknown** — strength `×0.75`, back inside the same sitting (15 minutes)
+### Tips for snippets worth studying
 
-The next snippet is picked by summed urgency (overdue and weak wins) with a nudge towards
-snippets you have not seen, skipping the one you just did when there is anywhere else to
-go.
-
-## Layout
-
-```
-src/
-  snippet.rs   corpus format, validation, and the two granularities
-  srs.rs       mastery, scheduling, verdict folding
-  store.rs     atomic progress file
-  review/
-    contract.rs  the one grading contract, shared by all backends
-    local.rs     keyword rubric
-    api.rs       BYOK HTTP (OpenAI / Anthropic shapes)
-    acp.rs       hand-written ACP client + reviewer
-  eval/        the grading eval suite (cases, runner, scoring)
-  session.rs   one sitting: pick, annotate, grade, schedule
-  ui.rs        terminal rendering
-
-evals/cases/   one TOML case per behaviour a reviewer must keep
-```
-
-`cargo test` runs 89 tests with no network and no agent: the ACP client is driven over a
-socketpair fixture, and one test is ignored because it spawns a real agent and spends
-tokens (`cargo test -- --ignored`).
+- **Use code you actually had to read.** A file from a repo you maintain beats a textbook
+  example, because that is the skill you are training.
+- **6–15 lines, 2–4 blocks.** Long enough to be real, short enough to finish in one
+  sitting.
+- **One idea per block.** If a block needs two unrelated concepts, it is two blocks.
+- **Keywords name ideas, not syntax.** `"takes ownership"`, `"early return"`,
+  `"allocates on the heap"` — not `"String"` or `"?"`, which appear everywhere and credit
+  nothing.
+- **Write the note as the correction.** If you cannot state what the learner should have
+  said in one sentence, the concept is too vague to grade.
+- **Reuse concept ids.** `rust.question_mark` across five snippets teaches the scheduler
+  that this is one skill; five one-off ids teach it nothing.
+- **A generic line inherits the block's concepts.** If a line does not serve them (a lone
+  `Ok(())`, a plain `}`), give it its own `blocks.line` entry, or it will be asked a
+  question its block's rubric cannot answer.
 
 ## Evals
 
-Grading is the part that can rot without a Rust test failing, so it has its own suite:
-`readcode eval` runs `evals/cases/*.toml` against a reviewer and scores it.
+Grading can regress without any Rust test failing, so it has its own suite:
 
-- `--target mock` proves the harness (a contrarian mock must turn the suite red), and
-  runs in CI.
-- `--target local` is the offline rubric, deterministic, asserted against a baseline in
-  `cargo test`. It scores **0.83**: keyword matching cannot credit a paraphrase.
-- `--target acp` / `api` measure a real reviewer. `opencode 1.19.5` with
-  `deepseek/deepseek-v4-pro` scores **1.00** (6/6 cases, 9–12 s per case).
+```sh
+cargo run -- eval                     # offline rubric, deterministic
+cargo run -- eval --target mock       # prove the harness itself
+cargo run -- eval --target acp        # your own agent (~10 s per case)
+cargo run -- eval --target api        # BYOK
+```
 
-Cases encode promises, not benchmarks: a misconception must never be credited, "I don't
-know" must never be `wrong`, a correct idea in clumsy words must be `correct`. Runs land
-in `evals/runs/<stamp>/` with a manifest, `results.jsonl` and one trace per case. See
-`evals/README.md`.
+Cases live in `evals/cases/` as one TOML file per behaviour — a misconception must never
+be credited, "I don't know" must never be marked wrong, a correct idea in clumsy words
+must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
+[`evals/README.md`](evals/README.md).
+
+## Contributing
+
+```sh
+cargo test                        # 89 tests, no network, no agent
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+cargo run -- eval --target mock   # what CI also runs
+```
 
 ## Roadmap
 
 - [x] Line-by-line annotation alongside block mode
 - [ ] A ratatui TUI: syntax highlighting, arrow keys instead of prompts
 - [ ] More corpora: Python, TypeScript, Go, and "read your own repo" mode
-- [ ] Ask the reviewer for a *targeted* follow-up when a concept is unknown, not just a note
-- [ ] An MCP server so the same agent can look up your weak concepts while you work
-- [ ] Shareable corpora with a manifest and a difficulty signal
+- [ ] A targeted follow-up question when a concept is unknown, not just a note
+- [ ] An MCP server so your agent can look up weak concepts while you work
 
 ## Licence
 
