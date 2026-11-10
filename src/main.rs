@@ -166,20 +166,53 @@ fn progress_view<'a>(corpus: &Corpus, progress: &Progress, now: u64) -> ui::Prog
         }
     }
 
-    let solid_at_level = at_level
-        .iter()
-        .filter(|concept| {
-            progress
-                .concepts
-                .get(*concept)
-                .is_some_and(|state| state.is_mastered())
-        })
-        .count();
+    // One row per rung that has content, so the ladder shows the way up.
+    let mut ladder: Vec<ui::LevelProgress> = Vec::new();
+    for rung in 1..=readcode::snippet::MAX_LEVEL {
+        let concepts: BTreeSet<String> = corpus
+            .snippets()
+            .iter()
+            .filter(|snippet| snippet.levels().from == rung)
+            .flat_map(|snippet| snippet.concepts())
+            .collect();
+        if concepts.is_empty() {
+            continue;
+        }
+        let strength: f64 = concepts
+            .iter()
+            .map(|concept| {
+                progress
+                    .concepts
+                    .get(concept)
+                    .map(|state| state.strength)
+                    .unwrap_or(0.0)
+            })
+            .sum();
+        let solid = concepts
+            .iter()
+            .filter(|concept| {
+                progress
+                    .concepts
+                    .get(*concept)
+                    .is_some_and(|state| state.is_mastered())
+            })
+            .count();
+        ladder.push(ui::LevelProgress {
+            level: rung,
+            strength: if concepts.is_empty() {
+                0.0
+            } else {
+                strength / concepts.len() as f64
+            },
+            solid,
+            total: concepts.len(),
+        });
+    }
 
     let mut needs_work: Vec<ConceptState> = progress
         .concepts
         .values()
-        .filter(|state| !state.is_mastered() || (state.due_at != 0 && state.due_at <= now))
+        .filter(|state| !state.is_mastered())
         .cloned()
         .collect();
     needs_work.sort_by(|a, b| b.urgency(now).total_cmp(&a.urgency(now)));
@@ -189,38 +222,25 @@ fn progress_view<'a>(corpus: &Corpus, progress: &Progress, now: u64) -> ui::Prog
         level_name: level
             .map(|level| readcode::snippet::LEVELS[level as usize - 1])
             .unwrap_or(""),
-        solid_at_level,
-        total_at_level: at_level.len(),
-        strength_at_level: at_level
-            .iter()
-            .map(|concept| {
-                progress
-                    .concepts
-                    .get(concept)
-                    .map(|state| state.strength)
-                    .unwrap_or(0.0)
-            })
-            .sum(),
+        ladder,
         snippets_seen: progress.seen_snippets.len(),
         snippets_total: corpus.snippets().len(),
         new_at_level,
-        due_now: progress
+        started: progress
             .concepts
             .values()
-            .filter(|state| state.due_at != 0 && state.due_at <= now)
+            .filter(|state| state.reps > 0)
             .count(),
-        next_due: progress
-            .concepts
-            .values()
-            .filter(|state| state.due_at > now)
-            .map(|state| state.due_at)
-            .min(),
-        needs_work,
         solid: progress
             .concepts
             .values()
             .filter(|state| state.is_mastered())
             .count(),
+        untouched: at_level
+            .iter()
+            .filter(|concept| !progress.concepts.contains_key(*concept))
+            .count(),
+        needs_work,
     }
 }
 
@@ -332,15 +352,17 @@ fn main() -> Result<()> {
             if outcome.is_some() {
                 progress.save(&progress_path)?;
                 let view = progress_view(&corpus, &progress, now);
-                if view.total_at_level > 0 {
+                if let Some(rung) = view
+                    .ladder
+                    .iter()
+                    .find(|rung| Some(rung.level) == view.level)
+                {
                     writeln!(
                         out,
                         "{}",
                         style.dim(&format!(
-                            "level {} · {} of {} solid at this level",
-                            progress.level.unwrap_or(1),
-                            view.solid_at_level,
-                            view.total_at_level
+                            "level {} · {} of {} solid",
+                            rung.level, rung.solid, rung.total
                         ))
                     )?;
                 }
@@ -516,7 +538,7 @@ fn main() -> Result<()> {
         Command::Status => {
             let mut out = io::stdout();
             let view = progress_view(&corpus, &progress, now);
-            ui::print_progress(&mut out, style, &view, now)?;
+            ui::print_progress(&mut out, style, &view)?;
             if let Some(advice) = session::level_advice(&corpus, &progress) {
                 writeln!(out)?;
                 writeln!(out, "{}", style.cyan(&advice))?;

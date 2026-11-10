@@ -1,0 +1,36 @@
+id = "rust-014"
+language = "rust"
+title = "Building a string from a slice"
+level = 1
+intro = "Two strings, one owned, one borrowed, joined once."
+code = '''
+fn greet(name: &str) -> String {
+    let mut greeting = String::from("hello, ");
+    greeting.push_str(name);
+    greeting
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "Why is the parameter a `&str` while the return value is a `String`?"
+concepts = ["rust.borrow.str_param", "rust.heap.string"]
+notes = { "rust.borrow.str_param" = "A `&str` borrows the caller's text; the function does not need to own it.", "rust.heap.string" = "A `String` is owned and heap-allocated, which is what a new string needs." }
+
+[[blocks]]
+lines = [2, 2]
+ask = "Why `mut`, and what exactly lives on the heap after this line?"
+concepts = ["rust.binding.mut", "rust.heap.string"]
+notes = { "rust.binding.mut" = "`push_str` grows the string, which needs a mutable binding.", "rust.heap.string" = "`String::from` allocates a buffer holding the literal; `greeting` owns it." }
+
+[[blocks]]
+lines = [3, 3]
+ask = "What does `push_str` do to `name`, and what does it do to `greeting`?"
+concepts = ["rust.string.push_str", "rust.borrow.str_param"]
+notes = { "rust.string.push_str" = "It copies the bytes of `name` onto the end of `greeting`; `name` is untouched.", "rust.borrow.str_param" = "The borrowed argument is read, not consumed." }
+
+[[blocks]]
+lines = [4, 5]
+ask = "What is handed back, and who can use it?"
+concepts = ["rust.return.value", "rust.ownership.return"]
+notes = { "rust.return.value" = "The bare name is the tail expression, so it is the return value.", "rust.ownership.return" = "`greeting` is moved out to the caller, which becomes its owner." }

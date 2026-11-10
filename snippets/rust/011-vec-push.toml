@@ -1,0 +1,40 @@
+id = "rust-011"
+language = "rust"
+title = "Collecting the even numbers"
+level = 2
+intro = "A loop that builds a new vector out of a borrowed slice."
+code = '''
+fn evens(values: &[i32]) -> Vec<i32> {
+    let mut out = Vec::new();
+    for value in values {
+        if value % 2 == 0 {
+            out.push(*value);
+        }
+    }
+    out
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What does this signature borrow, and what does it hand back?"
+concepts = ["rust.slice", "rust.fn.return"]
+notes = { "rust.slice" = "`&[i32]` is a borrowed view of a sequence; the caller keeps ownership of the numbers.", "rust.fn.return" = "It returns an owned `Vec<i32>`, newly allocated." }
+
+[[blocks]]
+lines = [2, 2]
+ask = "Why is `mut` here, and what is the type of `out` before anything is pushed?"
+concepts = ["rust.binding.mut", "rust.vec.type"]
+notes = { "rust.binding.mut" = "`out` is pushed to inside the loop, which needs a mutable binding.", "rust.vec.type" = "`Vec::new()` infers its element type from the first `push`, which is `i32`." }
+
+[[blocks]]
+lines = [3, 5]
+ask = "Where does the `*` come from — what is `value` in this loop?"
+concepts = ["rust.iterator.for", "rust.deref", "rust.operator.modulo"]
+notes = { "rust.iterator.for" = "Iterating a slice yields references, so `value` is `&i32`.", "rust.deref" = "`*value` copies the integer out of the reference so it can be pushed as an `i32`.", "rust.operator.modulo" = "`% 2 == 0` keeps the even numbers." }
+
+[[blocks]]
+lines = [6, 9]
+ask = "What is returned here, and who owns it now?"
+concepts = ["rust.return.value", "rust.ownership.return"]
+notes = { "rust.ownership.return" = "`out` is moved out of the function; the caller becomes its owner.", "rust.return.value" = "The trailing `out` is the tail expression, so it is the return value." }

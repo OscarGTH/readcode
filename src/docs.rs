@@ -205,6 +205,56 @@ const TABLE: &[(&str, &str, &str)] = &[
         "std::ops::RangeInclusive",
         "https://doc.rust-lang.org/std/ops/struct.RangeInclusive.html",
     ),
+    (
+        "rust.option",
+        "std::option::Option",
+        "https://doc.rust-lang.org/std/option/enum.Option.html",
+    ),
+    (
+        "rust.match",
+        "The Rust Book — The match Control Flow Operator",
+        "https://doc.rust-lang.org/book/ch06-02-match.html",
+    ),
+    (
+        "rust.enum",
+        "The Rust Book — Defining an Enum",
+        "https://doc.rust-lang.org/book/ch06-01-defining-an-enum.html",
+    ),
+    (
+        "rust.vec",
+        "The Rust Book — Storing Lists of Values with Vectors",
+        "https://doc.rust-lang.org/book/ch08-01-vectors.html",
+    ),
+    (
+        "rust.parse",
+        "str::parse",
+        "https://doc.rust-lang.org/std/primitive.str.html#method.parse",
+    ),
+    (
+        "rust.map_err",
+        "Result::map_err",
+        "https://doc.rust-lang.org/std/result/enum.Result.html#method.map_err",
+    ),
+    (
+        "rust.tuple",
+        "The Rust Book — Data Types, the tuple",
+        "https://doc.rust-lang.org/book/ch03-02-data-types.html",
+    ),
+    (
+        "rust.cast",
+        "The Rust Reference — type cast expressions",
+        "https://doc.rust-lang.org/reference/expressions/operator-expr.html#type-cast-expressions",
+    ),
+    (
+        "rust.sum",
+        "Iterator::sum",
+        "https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.sum",
+    ),
+    (
+        "rust.string",
+        "String::push_str",
+        "https://doc.rust-lang.org/std/string/struct.String.html#method.push_str",
+    ),
 ];
 
 /// The best page for one concept, if the table knows the namespace.

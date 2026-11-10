@@ -350,28 +350,34 @@ pub fn print_grade(
 /// Everything `readcode status` needs to answer three questions: where am I, what
 /// is due, and what should I do next. Built by the caller, which is the only place
 /// that has both the corpus and the progress.
+/// One rung of the ladder: how much of it is solid, and how far along the
+/// concepts are on average.
+pub struct LevelProgress {
+    pub level: u8,
+    pub strength: f64,
+    pub solid: usize,
+    pub total: usize,
+}
+
+/// Everything `readcode status` needs to answer "where am I, and what needs work".
+/// Built by the caller, which is the only place that has both corpus and progress.
 pub struct ProgressView<'a> {
     pub level: Option<u8>,
     pub level_name: &'a str,
-    /// Concepts in snippets at or below the learner's level, and how many are solid.
-    pub solid_at_level: usize,
-    pub total_at_level: usize,
-    /// Summed strength of the concepts at this level, for a bar that moves.
-    pub strength_at_level: f64,
+    pub ladder: Vec<LevelProgress>,
     pub snippets_seen: usize,
     pub snippets_total: usize,
     pub new_at_level: usize,
-    pub due_now: usize,
-    pub next_due: Option<u64>,
-    pub needs_work: Vec<ConceptState>,
+    pub started: usize,
     pub solid: usize,
+    pub untouched: usize,
+    pub needs_work: Vec<ConceptState>,
 }
 
 pub fn print_progress(
     out: &mut dyn Write,
     style: Style,
     view: &ProgressView<'_>,
-    now: u64,
 ) -> io::Result<()> {
     match view.level {
         Some(level) => writeln!(
@@ -386,19 +392,31 @@ pub fn print_progress(
         )?,
     }
 
-    if view.total_at_level > 0 {
-        // Average strength, not the count of mastered concepts: a first correct
-        // answer is real progress, and a bar that stays at 0% for three sittings
-        // tells the learner nothing moved.
-        let ratio = view.strength_at_level / view.total_at_level as f64;
+    // The ladder, so "where am I" is one glance rather than an inference from
+    // counts. No dates: how soon something comes back is the app's business, and
+    // a deadline you did not ask for reads as homework.
+    for rung in &view.ladder {
+        let here = view.level == Some(rung.level);
+        let marker = if here { "  ← you are here" } else { "" };
         writeln!(
             out,
-            "  {}  {}/{} solid at this level",
-            bar(style, ratio),
-            view.solid_at_level,
-            view.total_at_level
+            "  {} {}  {}/{} solid{}",
+            if here {
+                style.cyan(&format!("{}", rung.level))
+            } else {
+                style.dim(&format!("{}", rung.level))
+            },
+            bar(style, rung.strength),
+            rung.solid,
+            rung.total,
+            if here {
+                style.cyan(marker)
+            } else {
+                String::new()
+            }
         )?;
     }
+
     if view.snippets_seen == 0 {
         writeln!(out)?;
         writeln!(
@@ -412,7 +430,8 @@ pub fn print_progress(
     writeln!(out)?;
     writeln!(
         out,
-        "  {} of {} snippets seen · {}",
+        "  {}  {} of {} seen · {}",
+        style.dim("snippets"),
         view.snippets_seen,
         view.snippets_total,
         match view.new_at_level {
@@ -423,12 +442,11 @@ pub fn print_progress(
     )?;
     writeln!(
         out,
-        "  {}",
-        match (view.due_now, view.next_due) {
-            (0, Some(next)) => format!("nothing due now · next review {}", describe_due(now, next)),
-            (0, None) => "nothing due — every concept is scheduled".to_string(),
-            (many, _) => format!("{many} due now"),
-        }
+        "  {}  {} started · {} solid · {} not started",
+        style.dim("concepts"),
+        view.started,
+        view.solid,
+        view.untouched
     )?;
 
     writeln!(out)?;
@@ -436,7 +454,7 @@ pub fn print_progress(
         writeln!(
             out,
             "{}",
-            style.dim("nothing needs work: every concept is solid and scheduled")
+            style.dim("nothing needs work: every concept you have met is solid")
         )?;
         return Ok(());
     }
@@ -450,36 +468,19 @@ pub fn print_progress(
         };
         writeln!(
             out,
-            "  {:<32} {}  {}",
+            "  {:<34} {}",
             format!("{group}.{leaf}"),
-            bar(style, state.strength),
-            describe_due(now, state.due_at)
+            bar(style, state.strength)
         )?;
     }
     if view.needs_work.len() > SHOWN {
         writeln!(
             out,
             "  {}",
-            style.dim(&format!(
-                "and {} more — `readcode` works through them as they come due",
-                view.needs_work.len() - SHOWN
-            ))
+            style.dim(&format!("and {} more", view.needs_work.len() - SHOWN))
         )?;
     }
-    writeln!(
-        out,
-        "  {}",
-        style.dim(&format!(
-            "{} concept{} solid in total",
-            view.solid,
-            plural(view.solid)
-        ))
-    )?;
     Ok(())
-}
-
-fn plural(count: usize) -> &'static str {
-    if count == 1 { "" } else { "s" }
 }
 
 pub fn order_for_status(states: Vec<ConceptState>, now: u64) -> Vec<ConceptState> {
@@ -550,69 +551,97 @@ mod tests {
 
     fn rendered(view: &ProgressView<'_>) -> String {
         let mut out: Vec<u8> = Vec::new();
-        print_progress(&mut out, Style::new(false), view, 1_000).unwrap();
+        print_progress(&mut out, Style::new(false), view).unwrap();
         String::from_utf8(out).unwrap()
     }
 
-    fn view<'a>(_states: &'a [ConceptState], needs_work: Vec<ConceptState>) -> ProgressView<'a> {
+    fn view(needs_work: Vec<ConceptState>) -> ProgressView<'static> {
         ProgressView {
             level: Some(2),
             level_name: "small functions",
-            solid_at_level: 2,
-            total_at_level: 8,
-            strength_at_level: 3.2,
+            ladder: vec![
+                LevelProgress {
+                    level: 1,
+                    strength: 1.0,
+                    solid: 9,
+                    total: 9,
+                },
+                LevelProgress {
+                    level: 2,
+                    strength: 0.4,
+                    solid: 0,
+                    total: 8,
+                },
+            ],
             snippets_seen: 3,
             snippets_total: 9,
             new_at_level: 4,
-            due_now: 1,
-            next_due: Some(5_000),
-            needs_work,
+            started: 5,
             solid: 2,
+            untouched: 3,
+            needs_work,
         }
     }
 
     #[test]
-    fn progress_leads_with_the_level_the_bar_and_what_is_due() {
+    fn progress_leads_with_the_ladder_and_marks_your_rung() {
         let mut state = ConceptState::new("rust.binding.mut");
         state.strength = 0.4;
         state.due_at = 900;
-        let states = vec![state.clone()];
-        let screen = rendered(&view(&states, vec![state]));
+        let screen = rendered(&view(vec![state]));
 
         assert!(screen.contains("level 2 · small functions"), "{screen}");
-        assert!(screen.contains("2/8 solid at this level"), "{screen}");
-        // 3.2 of 8 is 40%, so the bar is not empty even though nothing is mastered.
-        assert!(screen.contains("40%"), "{screen}");
-        assert!(screen.contains("3 of 9 snippets seen"), "{screen}");
+        assert!(screen.contains("9/9 solid"), "{screen}");
+        assert!(screen.contains("0/8 solid"), "{screen}");
+        assert!(screen.contains("← you are here"), "{screen}");
+        assert!(screen.contains("3 of 9 seen"), "{screen}");
         assert!(screen.contains("4 new at your level"), "{screen}");
-        assert!(screen.contains("1 due now"), "{screen}");
+        assert!(
+            screen.contains("5 started · 2 solid · 3 not started"),
+            "{screen}"
+        );
         assert!(screen.contains("rust.binding.mut"), "{screen}");
-        assert!(screen.contains("2 concepts solid in total"), "{screen}");
+    }
+
+    #[test]
+    fn no_dates_or_deadlines_appear() {
+        // How soon something returns is the app's business; the learner asked for
+        // it to stop reading like homework.
+        let mut state = ConceptState::new("rust.binding.mut");
+        state.strength = 0.4;
+        state.due_at = 900;
+        let screen = rendered(&view(vec![state]));
+        for forbidden in ["in 2", "next review", "due now", "tomorrow", "in 1h", "24h"] {
+            assert!(!screen.contains(forbidden), "{forbidden} in:\n{screen}");
+        }
     }
 
     #[test]
     fn a_silent_rung_says_so_instead_of_showing_an_empty_table() {
-        let screen = rendered(&view(&[], Vec::new()));
+        let screen = rendered(&view(Vec::new()));
         assert!(screen.contains("nothing needs work"), "{screen}");
     }
 
     #[test]
     fn a_fresh_profile_is_told_what_to_do() {
-        let empty = ProgressView {
+        let fresh = ProgressView {
             level: Some(1),
             level_name: "just started",
-            solid_at_level: 0,
-            total_at_level: 6,
-            strength_at_level: 0.0,
+            ladder: vec![LevelProgress {
+                level: 1,
+                strength: 0.0,
+                solid: 0,
+                total: 6,
+            }],
             snippets_seen: 0,
             snippets_total: 9,
             new_at_level: 2,
-            due_now: 0,
-            next_due: None,
-            needs_work: Vec::new(),
+            started: 0,
             solid: 0,
+            untouched: 6,
+            needs_work: Vec::new(),
         };
-        let screen = rendered(&empty);
+        let screen = rendered(&fresh);
         assert!(screen.contains("nothing annotated yet"), "{screen}");
         assert!(!screen.contains("needs work"), "{screen}");
     }
@@ -627,7 +656,7 @@ mod tests {
                 state
             })
             .collect();
-        let screen = rendered(&view(&states, states.clone()));
+        let screen = rendered(&view(states.clone()));
         assert!(screen.contains("and 4 more"), "{screen}");
     }
     use crate::corpus::Corpus;

@@ -1,0 +1,44 @@
+id = "rust-013"
+language = "rust"
+title = "Weighing a list of tuples"
+level = 3
+intro = "A filter/map/sum chain over pairs, with a closure that destructures."
+code = '''
+fn total_weight(items: &[(u32, f64)]) -> f64 {
+    items
+        .iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, weight)| *count as f64 * weight)
+        .sum()
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What is one `item` here, and what does the function promise?"
+concepts = ["rust.tuple.type", "rust.fn.return"]
+notes = { "rust.tuple.type" = "Each item is a pair: a `u32` count and an `f64` weight.", "rust.fn.return" = "It returns a total weight as `f64`." }
+
+[[blocks]]
+lines = [2, 3]
+ask = "What does `iter()` give the chain that a `for` loop would give you by hand?"
+concepts = ["rust.iterator.lazy", "rust.slice"]
+notes = { "rust.slice" = "The slice is borrowed, so iterating costs no copy.", "rust.iterator.lazy" = "`iter()` builds an iterator; nothing is computed until a consumer asks for a value." }
+
+[[blocks]]
+lines = [4, 4]
+ask = "What is the closure receiving, and what does the `|(count, _)|` pattern do?"
+concepts = ["rust.closure", "rust.tuple.destructure"]
+notes = { "rust.tuple.destructure" = "The pattern unpacks the pair in the parameter list; `_` says the weight is not needed here.", "rust.closure" = "The closure borrows nothing from outside and only reads its argument." }
+
+[[blocks]]
+lines = [5, 5]
+ask = "Why the cast, and what does the closure return?"
+concepts = ["rust.cast", "rust.closure"]
+notes = { "rust.cast" = "`*count as f64` converts the integer so the multiplication is float.", "rust.closure" = "It returns `count * weight` for each pair, leaving the iterator of weights." }
+
+[[blocks]]
+lines = [6, 7]
+ask = "What ends the chain, and why does that matter for all the lines above?"
+concepts = ["rust.sum"]
+notes = { "rust.sum" = "`sum()` is the consumer: it drives the iterator, which is when filter and map actually run." }

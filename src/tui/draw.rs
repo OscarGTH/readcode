@@ -462,14 +462,14 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
             .unwrap_or("(left blank)");
         labelled(&mut rows, "you", answer, Theme::dim(), Theme::note(), width);
 
-        // A correct answer needs no review and no lesson: the praise is noise,
-        // and the lesson is for the lines that did not land.
-        if graded.verdict != Verdict::Correct {
+        {
+            // Even a correct answer gets its explanation: it may have been a guess,
+            // and the lesson is the part worth keeping.
             let nuanced = graded
                 .concepts
                 .iter()
                 .any(|(_, verdict)| *verdict != graded.verdict);
-            if nuanced {
+            if nuanced && graded.verdict != Verdict::Correct {
                 for (concept, verdict) in &graded.concepts {
                     rows.push(Line::from(vec![
                         Span::styled(" ".repeat(LABEL_INDENT), Theme::hint()),
@@ -478,7 +478,10 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
                     ]));
                 }
             }
-            if !graded.feedback.trim().is_empty() {
+            // On a correct answer the reviewer's feedback is usually praise; the
+            // lesson is the part that teaches, so `review` and `missed` are for the
+            // answers that fell short.
+            if graded.verdict != Verdict::Correct && !graded.feedback.trim().is_empty() {
                 labelled(
                     &mut rows,
                     "review",
@@ -488,7 +491,7 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
                     width,
                 );
             }
-            if !graded.missing.is_empty() {
+            if graded.verdict != Verdict::Correct && !graded.missing.is_empty() {
                 labelled(
                     &mut rows,
                     "missed",
@@ -508,33 +511,22 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
                     width,
                 );
             }
+            // Reading under the entry it belongs to: a list at the end made the
+            // learner match links back to prompts.
+            for doc in reading(app, prompt) {
+                labelled(
+                    &mut rows,
+                    "docs",
+                    &doc.title,
+                    Theme::dim(),
+                    Theme::dim(),
+                    width,
+                );
+                labelled(&mut rows, "", &doc.url, Theme::hint(), Theme::hint(), width);
+            }
         }
         if entry % 2 == 0 {
             band(&mut rows[band_start..], width);
-        }
-    }
-
-    // Reading, once for the whole sitting rather than twice under every prompt.
-    let mut seen: Vec<crate::docs::Doc> = Vec::new();
-    for prompt in &app.prompts {
-        for doc in reading(app, prompt) {
-            if !seen.iter().any(|existing| existing.url == doc.url) {
-                seen.push(doc);
-            }
-        }
-    }
-    if !seen.is_empty() {
-        rows.push(Line::raw(""));
-        rows.push(Line::from(Span::styled(" read more", Theme::dim())));
-        for doc in seen.iter().take(6) {
-            rows.push(Line::from(vec![
-                Span::styled("   ", Theme::hint()),
-                Span::styled(doc.title.clone(), Theme::dim()),
-            ]));
-            rows.push(Line::from(vec![
-                Span::styled("   ", Theme::hint()),
-                Span::styled(doc.url.clone(), Theme::hint()),
-            ]));
         }
     }
 
@@ -974,14 +966,14 @@ mod tests {
             screen.contains("The map stores borrows of the input text"),
             "{screen}"
         );
-        // Reading, once for the sitting.
-        assert_eq!(screen.matches("read more").count(), 1, "{screen}");
+        // Reading sits under the entry it belongs to, not in a list at the end.
+        assert!(screen.contains("docs"), "{screen}");
         assert!(screen.contains("doc.rust-lang.org"), "{screen}");
         assert!(screen.contains("ch10-03"), "the lifetime chapter: {screen}");
     }
 
     #[test]
-    fn a_correct_answer_is_just_the_line_and_what_was_said() {
+    fn a_correct_answer_still_gets_the_explanation() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("006").unwrap();
         let mut app = app_with_answer(snippet);
@@ -1005,10 +997,15 @@ mod tests {
         // Even a correct line shows what was asked.
         assert!(screen.contains("ask     "), "{screen}");
         assert!(screen.contains(&app.prompts[0].ask), "{screen}");
-        // Praise and a lesson on a correct line are clutter, so neither appears.
-        assert!(!screen.contains("Spot on"), "{screen}");
-        assert!(!screen.contains("why"), "{screen}");
-        assert!(!screen.contains("review  "), "{screen}");
+        // And it still gets the lesson: a right answer may have been a guess.
+        assert!(screen.contains("why"), "{screen}");
+        assert!(
+            screen.contains("`main` is where the program starts"),
+            "{screen}"
+        );
+        // With its reading beside it.
+        assert!(screen.contains("docs"), "{screen}");
+        assert!(screen.contains("ch01-02-hello-world"), "{screen}");
     }
 
     #[test]

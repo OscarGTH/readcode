@@ -1,0 +1,42 @@
+id = "rust-012"
+language = "rust"
+title = "Turning a parse error into your own"
+level = 2
+intro = "A port number parsed from text, with the error type translated on the way out."
+code = '''
+fn parse_port(text: &str) -> Result<u16, String> {
+    text.trim()
+        .parse::<u16>()
+        .map_err(|error| format!("not a port: {error}"))
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What are the two halves of this return type telling the caller?"
+concepts = ["rust.result", "rust.borrow.str_param"]
+notes = { "rust.result" = "`Result<u16, String>` is either the port or a message describing what went wrong.", "rust.borrow.str_param" = "The input is borrowed, so the caller keeps the text." }
+
+[[blocks]]
+lines = [2, 2]
+ask = "What does `trim()` return, and where was the text before it?"
+concepts = ["rust.slice", "rust.method.call"]
+notes = { "rust.slice" = "`trim()` returns a `&str` slice of the same text with the edges removed; nothing is copied.", "rust.method.call" = "Methods chain here because each returns a value the next one takes." }
+
+[[blocks]]
+lines = [3, 3]
+ask = "What does `parse::<u16>()` produce when the text is not a number?"
+concepts = ["rust.parse", "rust.error.from"]
+notes = { "rust.parse" = "`parse` returns a `Result`, so a bad string is a value, not a panic.", "rust.error.from" = "The error type is whatever `u16::from_str` declares; here it is adapted rather than converted by `?`." }
+
+[[blocks]]
+lines = [4, 4]
+ask = "What does `map_err` change, and what does it leave alone?"
+concepts = ["rust.map_err", "rust.closure"]
+notes = { "rust.map_err" = "It rewrites only the error half of the `Result`, turning the parse error into a message.", "rust.closure" = "`|error| format!(...)` is a closure that captures nothing but its argument." }
+
+[[blocks]]
+lines = [5, 5]
+ask = "Why is there no `?` on this chain?"
+concepts = ["rust.question_mark"]
+notes = { "rust.question_mark" = "There is nothing to propagate to: this function is the boundary, so it returns the `Result` itself." }

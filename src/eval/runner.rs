@@ -683,9 +683,9 @@ impl Reviewer for MockReviewer {
                     feedback: String::new(),
                     missing: Vec::new(),
                     concepts,
-                    // Anything not credited gets a lesson, exactly as the
-                    // contract asks the real reviewer for.
-                    teach: (fallback != Verdict::Correct).then(|| {
+                    // Every prompt gets a lesson, as the contract asks the real
+                    // reviewer for: a right answer may have been a guess.
+                    teach: Some({
                         let notes: Vec<&str> = prompt.notes.values().map(String::as_str).collect();
                         if notes.is_empty() {
                             format!(

@@ -23,18 +23,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 [[blocks]]
 lines = [1, 3]
-ask = "What does `use` do, and why is the error type a `Box<dyn Error>` rather than a concrete error?"
+ask = "What does `Box<dyn Error>` let this signature promise about failure?"
 concepts = ["rust.use.import", "rust.error.dynamic"]
 notes = { "rust.use.import" = "`use` brings `std::fs` into scope so the body can write `fs::` instead of `std::fs::`.", "rust.error.dynamic" = "`Box<dyn Error>` erases the concrete type behind a pointer, so an `io::Error` and a `ParseIntError` both fit the same return type." }
 
 [[blocks]]
 lines = [4, 7]
-ask = "What does each `?` do on success and on failure, and who owns the `&str`?"
+ask = "When `read_to_string` fails, what does the `?` hand back, and to whom?"
 concepts = ["rust.question_mark", "rust.error.from", "rust.borrow.str_param", "rust.result.ok"]
 notes = { "rust.question_mark" = "`?` matches: `Ok` unwraps and continues, `Err` returns from the function — it is a `match`, not a panic.", "rust.error.from" = "`?` also calls `From::from` on the error, which is where `io::Error` becomes `Box<dyn Error>`.", "rust.borrow.str_param" = "`&str` is a borrowed view of text the caller owns: no allocation and no transfer of ownership.", "rust.result.ok" = "`Ok(port)` wraps the parsed number in `Ok` so the return type is satisfied." }
 
 [[blocks]]
 lines = [8, 13]
-ask = "Can `main` return an error, and what does the caller see when it does?"
+ask = "What does returning `Result` from `main` give the shell when this fails?"
 concepts = ["rust.main.result", "rust.question_mark", "rust.return.ok", "rust.exit.code"]
 notes = { "rust.main.result" = "`main` may return `Result<(), E>`: the `Termination` trait turns it into an exit status.", "rust.question_mark" = "The second `?` propagates a failure from `read_port` out of `main` instead of handling it here.", "rust.return.ok" = "`Ok(())` is the success value of `Result<(), _>`: a unit value meaning 'no data'.", "rust.exit.code" = "An `Err` escaping `main` prints the error's `Debug` to stderr and exits with a failure status." }

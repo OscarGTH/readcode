@@ -120,16 +120,16 @@ the code it describes:
 - `missed · …` — the points it left out; a concept the reviewer could not judge from that
   answer is left out rather than marked "unknown", since a line is only asked to prove what
   it can show
-- `why` — the lesson: what the code actually does, in two or three sentences. Required
-  whenever the verdict is not "correct", and the whole answer when you said you did not
-  know. Grading that only marks you down is not teaching.
+- `why` — the lesson: what the code actually does, in two or three sentences. It appears on
+  every prompt, right answers included, because a right answer can be a guess and the full
+  mechanism is the part worth keeping. Grading that only marks you down is not teaching.
+- `docs` — reading under the entry it belongs to, so a link is never something you have to
+  match back to a prompt afterwards.
 
 Entries are separated by a rule as well as a slightly different background: the rule reads
 in any terminal and needs no colour, and the shade helps when you are scrolling fast.
 
-A correct line stops at `you`: praise is not information, and a review you have to scroll
-through is one you stop reading. Reading comes once, at the end of the sitting, deduplicated
-by topic — from a table keyed by concept namespace rather than from the model, because a
+Links come from a table keyed by concept namespace rather than from the model, because a
 study tool that invents URLs is worse than one that stays quiet. A corpus author can add
 their own with `docs = [{ title = "…", url = "…" }]`.
 
@@ -178,23 +178,28 @@ question. `--lines` / `--blocks` override it for one sitting.
 `readcode status` answers three questions and stops:
 
 ```
-level 1 · just started — values, arithmetic, printing
-  ███░░░░░  40%  0/9 solid at this level
+level 2 · small functions — branches, loops, one borrow at a time
+  1 ████████ 100%  9/9 solid
+  2 ████░░░░  52%  2/9 solid  ← you are here
+  3 ░░░░░░░░   0%  0/12 solid
 
-  1 of 9 snippets seen · 1 new at your level
-  nothing due now · next review in 24h
+  snippets  4 of 15 seen · 2 new at your level
+  concepts  11 started · 11 solid · 3 not started
 
 needs work
-  rust.binding.immutable           ███░░░░░  40%  in 24h
-  rust.fn.main                     ███░░░░░  40%  in 24h
-  ...
+  rust.iterator.for                  ███░░░░░  40%
+  rust.vec.type                      ██░░░░░░  25%
 ```
 
-The bar is average strength, not the count of mastered concepts: one correct answer is real
-progress, and a bar that sits at 0% for three sittings says nothing moved. The strict count
-(`0/9 solid`) stays next to it, because "solid" is what schedules the long intervals.
+The ladder is the point: each rung's bar is the **average strength** of its concepts, so one
+correct answer moves it, while the `solid` count is the strict measure (three correct
+answers) that schedules the long intervals. No dates anywhere — when something comes back is
+the app's business, and a deadline you did not ask for reads as homework.
 
 After every sitting you get one line of the same: `level 1 · 3 of 9 solid at this level`.
+
+The corpus that ships is 15 Rust snippets from `let` and `println!` up to iterator chains,
+boxed errors and enums with payloads. `readcode list` shows each with its level.
 
 `readcode` never re-offers a snippet you have answered while there is anything else to do at
 your level — either a snippet you have not met, or a concept that has come due again. A rung
@@ -435,7 +440,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 164 tests, no network, no agent
+cargo test                        # 174 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

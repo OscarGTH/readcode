@@ -16,14 +16,14 @@ Rules:
 - A short, accurate answer for a single line is complete. Do not ask for more detail than the line needs.
 - Grade only the concepts the annotation actually addresses. If a prompt lists several concepts but the answer speaks to one of them, return an entry for that one and OMIT the others — an omitted concept means "not asked of this prompt", not "wrong". Use "unknown" only when the learner says they do not know, or leaves the answer blank.
 - Keep feedback to one or two sentences per prompt. Name the misconception, not the syntax.
-- TEACH. `feedback` judges what the learner wrote; `teach` is the explanation they walk away with. Whenever the verdict is "unknown" or "wrong" — and always when the learner says they do not know or leaves the answer blank — `teach` must explain what the code actually does and why, in two or three sentences, as a good colleague would across a desk: name the mechanism, not the syntax. For a correct answer `teach` is optional; add it only when there is a sharper way to see the same line.
+- TEACH, ALWAYS. `feedback` judges what the learner wrote; `teach` is the explanation they walk away with. Include `teach` for every prompt, correct ones included: a right answer can be a guess, and the learner needs the full mechanism either way. On a wrong or unknown answer it is the correction; on a correct one it is the whole truth behind the line, including anything the answer left unsaid. Two or three sentences, as a colleague would say it across a desk: name the mechanism, not the syntax.
 - Reply with TEXT ONLY. Do not call tools, do not create or edit files, do not run commands, do not request permissions.
 - Reply with a single JSON object and nothing else: no prose before or after it, no markdown code fences.
 
 The JSON object has exactly this shape:
 {"prompts":[{"prompt":1,"verdict":"correct|partial|wrong|unknown","concepts":{"<concept id>":"correct|partial|wrong|unknown"},"missing":["short phrase"],"feedback":"one or two sentences","teach":"two or three sentences explaining the code itself"}],"summary":"one sentence for the whole snippet"}
 
-Emit one entry per prompt, in prompt order, using the prompt numbers given to you. `concepts` must use the exact concept ids given, and may contain fewer ids than the prompt lists. `missing` lists what the learner failed to notice, as short phrases — not the concept's definition, and not a restatement of the rubric; leave it empty when nothing is missing. `teach` is required whenever the verdict is not "correct": it is the lesson, not the mark.
+Emit one entry per prompt, in prompt order, using the prompt numbers given to you. `concepts` must use the exact concept ids given, and may contain fewer ids than the prompt lists. `missing` lists what the learner failed to notice, as short phrases — not the concept's definition, and not a restatement of the rubric; leave it empty when nothing is missing. `teach` is required for every prompt, right or wrong: it is the lesson, not the mark.
 "#;
 
 /// The grading request for one sitting. Everything a reviewer needs is here:
@@ -73,7 +73,7 @@ pub fn task(snippet: &Snippet, prompts: &[Prompt], annotations: &[Annotation]) -
     }
 
     out.push_str(
-        "\nGrade every prompt above. Be strict about meaning and generous about wording: a correct idea in clumsy words is \"correct\", and a line that is fully explained in one clause is not incomplete. For every prompt you do not mark \"correct\", include `teach`: what the code does and why, so the learner learns it here rather than looking it up later.",
+        "\nGrade every prompt above. Be strict about meaning and generous about wording: a correct idea in clumsy words is \"correct\", and a line that is fully explained in one clause is not incomplete. Include `teach` on every prompt — on a wrong one it is the correction, on a correct one it is the full mechanism, because a right answer may have been a guess.",
     );
     out
 }

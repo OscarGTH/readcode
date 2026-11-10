@@ -1,0 +1,32 @@
+id = "rust-010"
+language = "rust"
+title = "Two ways to be absent"
+level = 2
+intro = "A count that might be missing, turned into text by a match."
+code = '''
+fn describe(count: Option<usize>) -> String {
+    match count {
+        Some(0) => "none".to_string(),
+        Some(n) => format!("{n}"),
+        None => "unknown".to_string(),
+    }
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "Read the signature: what can be missing, and what always comes back?"
+concepts = ["rust.option.type", "rust.fn.return"]
+notes = { "rust.option.type" = "`Option<usize>` is either `Some(count)` or `None` — the count may not exist, and the type says so.", "rust.fn.return" = "It always returns a `String`; absence is described rather than propagated." }
+
+[[blocks]]
+lines = [2, 5]
+ask = "Why does this match need three arms instead of two?"
+concepts = ["rust.option.match", "rust.match.arm"]
+notes = { "rust.option.match" = "`Option` has two shapes, but `Some(0)` is a third case worth its own arm.", "rust.match.arm" = "Arms are checked top to bottom, so `Some(0)` must come before the catch-all `Some(n)`." }
+
+[[blocks]]
+lines = [6, 7]
+ask = "Where does the value the caller gets come from?"
+concepts = ["rust.return.value"]
+notes = { "rust.return.value" = "The `match` is the tail expression of the body; its value is the function's return value, so no `return` is needed." }

@@ -46,6 +46,30 @@ const EMBEDDED: &[(&str, &str)] = &[
         "rust/009-range-sum.toml",
         include_str!("../snippets/rust/009-range-sum.toml"),
     ),
+    (
+        "rust/010-option-match.toml",
+        include_str!("../snippets/rust/010-option-match.toml"),
+    ),
+    (
+        "rust/011-vec-push.toml",
+        include_str!("../snippets/rust/011-vec-push.toml"),
+    ),
+    (
+        "rust/012-map-err.toml",
+        include_str!("../snippets/rust/012-map-err.toml"),
+    ),
+    (
+        "rust/013-sum-tuples.toml",
+        include_str!("../snippets/rust/013-sum-tuples.toml"),
+    ),
+    (
+        "rust/014-push-str.toml",
+        include_str!("../snippets/rust/014-push-str.toml"),
+    ),
+    (
+        "rust/015-enum-impl.toml",
+        include_str!("../snippets/rust/015-enum-impl.toml"),
+    ),
 ];
 
 #[derive(Debug, Default)]

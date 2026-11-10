@@ -31,6 +31,15 @@ const HEIGHT: u16 = 24;
 /// Answers a real sitting produced, so the frame shows an honest mid-sitting state
 /// rather than invented prose.
 fn answers_for(snippet: &str, asks: Asks) -> (&'static [&'static str], &'static str) {
+    if snippet.starts_with("rust-010") {
+        return (
+            &[
+                "it takes an optional usize count and always hands back a String",
+                "three arms: Some(0) first because it prints the word none, Some(n) for the rest, None when the count is missing",
+            ],
+            "the match is the tail expression, so its value is what the function returns",
+        );
+    }
     if snippet.starts_with("rust-006") && asks == Asks::Blocks {
         return (
             &[
