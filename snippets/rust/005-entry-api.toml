@@ -21,6 +21,11 @@ lines = [1, 2]
 ask = "What does this import bring into scope?"
 concepts = ["rust.use.import"]
 notes = { "rust.use.import" = "`use` brings `HashMap` into scope, so the rest of the file writes `HashMap` instead of `std::collections::HashMap`." }
+  [[blocks.line]]
+  at = 1
+  ask = "What does this import bring into scope?"
+  concepts = ["rust.use.import"]
+  notes = { "rust.use.import" = "`use` puts `HashMap` in scope so the body can write `HashMap` instead of the full path." }
 
 [[blocks]]
 lines = [3, 3]
@@ -38,6 +43,16 @@ lines = [4, 5]
 ask = "Why is `counts` mutable, and what does the `for` loop iterate over?"
 concepts = ["rust.binding.mut", "rust.iterator.for"]
 notes = { "rust.binding.mut" = "`mut` is required because the loop inserts into the map; without it every `insert` would be a compile error.", "rust.iterator.for" = "`for` drives an iterator: `split_whitespace()` yields each word as a `&str` slice of `text`." }
+  [[blocks.line]]
+  at = 4
+  ask = "Why must `counts` be mutable?"
+  concepts = ["rust.binding.mut"]
+  notes = { "rust.binding.mut" = "`mut` is required because the loop calls `insert`; an immutable binding would be a compile error." }
+  [[blocks.line]]
+  at = 5
+  ask = "What does the `for` loop iterate over, and where do the words come from?"
+  concepts = ["rust.iterator.for"]
+  notes = { "rust.iterator.for" = "`for` drives an iterator; `split_whitespace()` yields each word as a `&str` slice of `text`." }
 
 [[blocks]]
 lines = [6, 7]
@@ -55,3 +70,8 @@ lines = [8, 9]
 ask = "What is returned here, and why is there no `return` keyword?"
 concepts = ["rust.return.value"]
 notes = { "rust.return.value" = "`counts` is the tail expression: the value is moved out as the return value, which is why it has no semicolon." }
+  [[blocks.line]]
+  at = 8
+  ask = "Why is there no semicolon on this line?"
+  concepts = ["rust.return.value"]
+  notes = { "rust.return.value" = "It is the tail expression: the value is moved out as the return value, so no semicolon." }

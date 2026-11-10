@@ -75,8 +75,12 @@ Comprehension and attention to detail are different skills, so the app asks both
 
 - **block by block** — one question per semantic block: "what does `shout` take, and what
   does it give back?"
-- **line by line** — one question per significant line, with closing braces skipped and
-  the whole snippet kept on screen so a single line has its surroundings.
+- **line by line** — one question per significant line, answered the way you would
+  annotate a file: a window of surrounding lines, the lines you have already explained
+  carrying your note above them as a `//` comment, and the current line marked. When the
+  last line is answered you get the whole snippet back, annotated.
+
+![Line mode: the previous note sitting above its line as a comment, the current line marked](docs/line-by-line.png)
 
 You do not choose: the first visit uses whatever the snippet is authored for, and the
 next visit to the same snippet **alternates** to the other mode. Same code, different
@@ -247,9 +251,11 @@ count lines by hand to find the off-by-one.
   graded from the code alone, which is looser.
 - **Reuse concept ids.** `rust.question_mark` across five snippets teaches the scheduler
   that this is one skill; five one-off ids teach it nothing.
-- **A generic line inherits the block's concepts.** If a line does not serve them (a lone
-  `Ok(())`, a plain `}`), give it its own `blocks.line` entry, or it gets asked a question
-  its block's concepts cannot answer.
+- **A line must carry only the concepts it demonstrates.** Without a `blocks.line` entry a
+  line inherits every concept of its block, so a block holding two ideas gets asked to prove
+  both on each of its lines — and a learner who splits the answer across two lines gets
+  `unknown` for the half the reviewer did not see on that line. Give each significant line
+  its own entry when a block's concepts split.
 
 ## Evals
 
@@ -269,7 +275,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 93 tests, no network, no agent
+cargo test                        # 95 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

@@ -1,6 +1,7 @@
 //! Terminal rendering. Colour is opt-out (`--no-color` or `NO_COLOR`), and
 //! every layout degrades to plain text when it is off.
 
+use std::collections::BTreeMap;
 use std::io::{self, Write};
 
 use crate::review::Grade;
@@ -177,35 +178,98 @@ pub fn print_block(
     Ok(())
 }
 
-/// One line-mode question: the line itself, then what to say about it.
+/// Context around the line being asked, so a single line is not asked in a vacuum.
+const WINDOW: usize = 2;
+
+/// One line-mode question, answered the way you would annotate a file: the
+/// surrounding code, your notes already sitting above the lines they belong to,
+/// and the line in question marked.
 pub fn print_line_prompt(
     out: &mut dyn Write,
     style: Style,
-    width: usize,
+    snippet: &Snippet,
+    notes: &BTreeMap<usize, String>,
     number: usize,
-    prompt: &Prompt,
+    concepts: &[String],
+    ask: &str,
 ) -> io::Result<()> {
-    writeln!(out)?;
-    let concepts = prompt.concepts.join(", ");
+    let concepts = concepts.join(", ");
     let header = if concepts.is_empty() {
         format!("┌ line {number}")
     } else {
         format!("┌ line {number} · {concepts}")
     };
     writeln!(out, "{}", style.cyan(&header))?;
-    let painted = crate::highlight::highlight(
-        &prompt.lines.iter().map(String::as_str).collect::<Vec<_>>(),
-        style,
-    );
-    for (offset, line) in painted.iter().enumerate() {
+
+    let first = number.saturating_sub(WINDOW).max(1);
+    let last = (number + WINDOW).min(snippet.line_count());
+    let lines = snippet.code_lines();
+    let painted = crate::highlight::highlight(&lines[first - 1..last], style);
+    let width = gutter_width(snippet);
+
+    for (offset, code) in painted.iter().enumerate() {
+        let current = first + offset;
+        if let Some(note) = notes.get(&current) {
+            for line in note.lines() {
+                writeln!(
+                    out,
+                    "{} {}",
+                    // One column wider than the code gutter: the marker column.
+                    style.dim(&format!("{:>pad$} │", "", pad = width + 1)),
+                    style.dim(&format!("// {line}"))
+                )?;
+            }
+        }
+        // ASCII on purpose: a fancy marker falls back to a proportional font in
+        // many terminals and knocks the gutter out of alignment.
+        let marker = if current == number { ">" } else { " " };
+        let gutter = format!("{marker}{current:>width$} │");
+        if current == number {
+            writeln!(out, "{} {}", style.cyan(&gutter), code)?;
+        } else {
+            writeln!(out, "{} {}", style.dim(&gutter), code)?;
+        }
+    }
+    writeln!(out, "{}", style.bold(ask))?;
+    Ok(())
+}
+
+/// The whole snippet with your notes above the lines they belong to: the file you
+/// would have written if you had annotated it by hand.
+pub fn print_annotated(
+    out: &mut dyn Write,
+    style: Style,
+    snippet: &Snippet,
+    notes: &BTreeMap<usize, String>,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "{}",
+        style.bold(&format!("annotated · {}", snippet.id))
+    )?;
+    let lines = snippet.code_lines();
+    let painted = crate::highlight::highlight(&lines, style);
+    let width = gutter_width(snippet);
+
+    for (index, code) in painted.iter().enumerate() {
+        let number = index + 1;
+        if let Some(note) = notes.get(&number) {
+            for line in note.lines() {
+                writeln!(
+                    out,
+                    "{} {}",
+                    style.dim(&format!("{:>width$} │", "")),
+                    style.dim(&format!("// {line}"))
+                )?;
+            }
+        }
         writeln!(
             out,
             "{} {}",
-            style.dim(&format!("{:>width$} │", number + offset)),
-            line
+            style.dim(&format!("{number:>width$} │")),
+            code
         )?;
     }
-    writeln!(out, "{}", style.bold(&prompt.ask))?;
     Ok(())
 }
 
@@ -375,17 +439,94 @@ mod tests {
         assert_eq!(wide.matches('█').count(), 8);
     }
 
-    #[test]
-    fn line_prompts_render_the_line_and_its_concepts() {
+    fn line_fixture() -> (crate::snippet::Snippet, Vec<Prompt>) {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("005").unwrap().clone();
         let prompts = snippet.prompts(Asks::Lines);
+        (snippet, prompts)
+    }
+
+    #[test]
+    fn a_line_prompt_shows_a_window_and_marks_the_line() {
+        let (snippet, prompts) = line_fixture();
+        let prompt = prompts
+            .iter()
+            .find(|prompt| prompt.start == 6)
+            .expect("line 6 is asked");
         let mut out: Vec<u8> = Vec::new();
-        print_line_prompt(&mut out, Style::new(false), 1, 6, &prompts[0]).unwrap();
+        print_line_prompt(
+            &mut out,
+            Style::new(false),
+            &snippet,
+            &BTreeMap::new(),
+            6,
+            &prompt.concepts,
+            &prompt.ask,
+        )
+        .unwrap();
         let text = String::from_utf8(out).unwrap();
+
         assert!(text.contains("┌ line 6 · rust."), "{text}");
-        assert!(text.contains(&prompts[0].lines[0]), "{text}");
-        assert!(text.contains(&prompts[0].ask), "{text}");
+        assert!(text.contains("> 6 │"), "the line is marked: {text}");
+        assert!(text.contains(&prompt.ask), "{text}");
+        // Context, not the whole snippet.
+        assert!(text.contains(" 4 │"), "context above: {text}");
+        assert!(
+            !text.contains(" 1 │"),
+            "line 1 is out of the window: {text}"
+        );
+        assert!(
+            !text.contains(" 9 │"),
+            "line 9 is out of the window: {text}"
+        );
+    }
+
+    #[test]
+    fn an_existing_note_sits_above_its_line() {
+        let (snippet, prompts) = line_fixture();
+        let mut notes = BTreeMap::new();
+        notes.insert(4usize, "counts has to be mutable".to_string());
+        let prompt = prompts.iter().find(|p| p.start == 6).unwrap();
+        let mut out: Vec<u8> = Vec::new();
+        print_line_prompt(
+            &mut out,
+            Style::new(false),
+            &snippet,
+            &notes,
+            6,
+            &prompt.concepts,
+            &prompt.ask,
+        )
+        .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        let note_at = text
+            .find("// counts has to be mutable")
+            .expect("note shown");
+        let line_at = text.find(" 4 │     let mut counts").expect("line 4 shown");
+        assert!(note_at < line_at, "note precedes its line:\n{text}");
+    }
+
+    #[test]
+    fn the_annotated_listing_covers_the_whole_snippet() {
+        let (snippet, _) = line_fixture();
+        let mut notes = BTreeMap::new();
+        notes.insert(4usize, "counts is mutable".to_string());
+        notes.insert(6usize, "entry + or_insert\nsecond line".to_string());
+        let mut out: Vec<u8> = Vec::new();
+        print_annotated(&mut out, Style::new(false), &snippet, &notes).unwrap();
+        let text = String::from_utf8(out).unwrap();
+
+        assert!(text.contains("annotated · rust-005"), "{text}");
+        assert!(text.contains("// counts is mutable"), "{text}");
+        // A multi-line note stays multi-line, each line commented.
+        assert!(text.contains("// entry + or_insert"), "{text}");
+        assert!(text.contains("// second line"), "{text}");
+        // Every code line is present, including ones nobody asked about.
+        assert!(
+            text.contains(" 1 │ use std::collections::HashMap;"),
+            "{text}"
+        );
+        assert!(text.contains(" 9 │ }"), "{text}");
     }
 
     #[test]

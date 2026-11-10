@@ -2,6 +2,7 @@
 //! single line), grade it, and fold the verdicts back into mastery. I/O is
 //! injected so the whole loop runs in tests without a terminal.
 
+use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 
 use anyhow::{Context, Result, bail};
@@ -134,11 +135,8 @@ pub fn run(
     )?;
 
     let line_mode = mode == Asks::Lines;
-    if line_mode {
-        // In line mode the whole snippet is shown once: you need the
-        // surrounding code to explain a single line.
-        ui::print_code(term.out, style, snippet)?;
-    }
+    // Notes keyed by line, so each question shows the ones already given.
+    let mut notes: BTreeMap<usize, String> = BTreeMap::new();
 
     writeln!(term.out)?;
     writeln!(term.out, "{}", style.dim(HELP))?;
@@ -150,15 +148,22 @@ pub fn run(
             ui::print_line_prompt(
                 term.out,
                 style,
-                ui::gutter_width(snippet),
+                snippet,
+                &notes,
                 prompt.start,
-                prompt,
+                &prompt.concepts,
+                &prompt.ask,
             )?;
         } else {
             ui::print_block(term.out, style, snippet, prompt.block)?;
         }
         match read_annotation(term)? {
-            Some(text) => annotations.push(Annotation::new(index, text)),
+            Some(text) => {
+                if line_mode && !text.trim().is_empty() {
+                    notes.insert(prompt.start, text.trim().to_string());
+                }
+                annotations.push(Annotation::new(index, text));
+            }
             None => {
                 writeln!(
                     term.out,
@@ -168,6 +173,11 @@ pub fn run(
                 return Ok(None);
             }
         }
+    }
+
+    if line_mode {
+        writeln!(term.out)?;
+        ui::print_annotated(term.out, style, snippet, &notes)?;
     }
 
     writeln!(term.out)?;
@@ -426,10 +436,12 @@ mod tests {
         assert_eq!(outcome.mode, Asks::Lines);
         assert_eq!(progress.events.len(), line_prompts.len());
         assert_eq!(progress.last_mode(&snippet.id), Some(Asks::Lines));
-        // The whole snippet is shown once, then each significant line is asked.
+        // Each question brings its own window, and the answers end up as
+        // comments in the annotated listing.
         assert!(screen.contains("asked line by line"), "{screen}");
-        assert!(screen.contains("── block 4 · lines 6-7"), "{screen}");
         assert!(screen.contains("┌ line 6 · "), "{screen}");
+        assert!(screen.contains("annotated · rust-005"), "{screen}");
+        assert!(screen.contains("// an explanation"), "{screen}");
     }
 
     #[test]
