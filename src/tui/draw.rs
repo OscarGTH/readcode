@@ -947,6 +947,60 @@ mod tests {
         assert!(screen.contains("30×8"), "{screen}");
     }
 
+    /// The thing that most easily goes quietly wrong: an answer landing above the
+    /// line next to the one it was asked about. Checked for every prompt of every
+    /// built-in snippet, because one snippet's numbering will not cover them all.
+    #[test]
+    fn every_note_sits_above_the_line_it_answers() {
+        let corpus = Corpus::builtin().unwrap();
+        for snippet in corpus.snippets() {
+            let prompts = snippet.prompts(crate::snippet::Asks::Lines);
+            if prompts.is_empty() {
+                continue;
+            }
+            let mut app = App::new(
+                snippet,
+                prompts.clone(),
+                crate::snippet::Asks::Lines,
+                "check".into(),
+            );
+            for (index, prompt) in prompts.iter().enumerate() {
+                for char_ in format!("note{}-{index}", prompt.start).chars() {
+                    app.on_key(Key::Char(char_));
+                }
+                app.on_key(Key::Enter);
+            }
+
+            // Tall enough that nothing is scrolled out of the way.
+            let screen = screen(&app, 120, 90);
+            let rows: Vec<&str> = screen.lines().collect();
+            let gutter = snippet.line_count().to_string().len().max(2);
+
+            for (index, prompt) in prompts.iter().enumerate() {
+                let note = format!("// note{}-{index}", prompt.start);
+                let note_row = rows
+                    .iter()
+                    .position(|row| row.contains(&note))
+                    .unwrap_or_else(|| panic!("{}: no note for line {}", snippet.id, prompt.start));
+                let code_row = rows
+                    .iter()
+                    .position(|row| {
+                        !row.contains("//") && row.contains(&format!("{:>gutter$} │", prompt.start))
+                    })
+                    .unwrap_or_else(|| panic!("{}: no code row {}", snippet.id, prompt.start));
+                assert_eq!(
+                    note_row + 1,
+                    code_row,
+                    "{}: the note for line {} is not directly above it
+{}",
+                    snippet.id,
+                    prompt.start,
+                    screen
+                );
+            }
+        }
+    }
+
     #[test]
     fn wrapping_never_splits_a_word_that_fits() {
         let wrapped = wrap("the map borrows from the input text", 18);

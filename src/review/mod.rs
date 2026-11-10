@@ -89,6 +89,13 @@ pub trait Reviewer {
         prompts: &[Prompt],
         annotations: &[Annotation],
     ) -> Result<Grade>;
+
+    /// A plain request and reply, with the grading contract in front so the
+    /// reviewer knows what the tool is for. Used to draft corpus entries.
+    fn ask(&self, task: &str) -> Result<String> {
+        let _ = task;
+        bail!("this reviewer cannot draft — `--reviewer acp` or an API key can (the mock cannot)")
+    }
 }
 
 #[derive(Debug, Deserialize)]

@@ -48,6 +48,7 @@ readcode            # annotate the snippet that is most due
 readcode status     # what you have mastered, what is due
 readcode list       # the snippets available, with their levels
 readcode level      # what level you are reading at
+readcode draft f.rs # turn a file into a draft snippet with your reviewer
 readcode models     # which models your agent offers
 ```
 
@@ -196,6 +197,40 @@ says so once rather than switching behind your back. To see the options:
 readcode models          # models the agent offers, with the current one marked
 readcode --model deepseek/deepseek-v4-pro
 ```
+
+## Drafting a snippet with your reviewer
+
+Hand-writing a snippet means reading the code, choosing blocks, writing one question each,
+and writing the ground truth the grader marks against. The last part is what makes grading
+sharp, and it is also the slow part — so let the model draft it and keep the judging for
+yourself:
+
+```sh
+readcode draft src/parser.rs                      # print a draft
+readcode draft src/parser.rs --span 41-58         # just that function
+readcode draft src/parser.rs --level 3 --write    # save it under ./snippets/rust/
+```
+
+It reads the file, asks your reviewer (ACP agent or BYOK key) for one snippet in the corpus
+format, then fixes the id, the language and the level itself. Before it shows you anything
+the draft goes through the same rules `readcode check` enforces, so a draft that arrives is
+a draft that loads and plays.
+
+Three things to expect from the header of every draft:
+
+- `# fixed: block 2 extended from line 5 to 7 to cover the gap` — models think in ideas, not
+  in partitions, so they leave blank lines and closing braces uncovered. That is unambiguous,
+  so it is repaired and reported. An **overlap** is not: that means the reply is confused and
+  the draft is refused with the reason.
+- `# check: block 1 asks more than one question — split it in two: …` — the failure that
+  hurts grading most, flagged by counting interrogatives. Two questions in one ask means one
+  answer covering two things, and the note lands on whichever line opened the block.
+- Concepts are reused where they already exist (`--level` aside, the draft is told the corpus'
+  concept ids), so progress carries across snippets instead of fragmenting.
+
+What it will not do is tell you whether the *questions* are good. Read the draft: the asks
+are the product, and the notes are what the grader judges against. A vague note is a vague
+grade, and no amount of validation catches that.
 
 ## Adding your own corpus
 
@@ -353,7 +388,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 144 tests, no network, no agent
+cargo test                        # 156 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

@@ -117,6 +117,23 @@ enum Command {
         #[arg(long)]
         no_save: bool,
     },
+    /// Draft a corpus entry from a file, using the reviewer as an author.
+    Draft {
+        /// The file to turn into a snippet.
+        path: PathBuf,
+        /// Only this span of the file, 1-based (`--span 12-24`).
+        #[arg(long, value_name = "A-B")]
+        span: Option<String>,
+        /// The level the snippet is written for (1-5); inferred as 2 if omitted.
+        #[arg(long, value_name = "N")]
+        level: Option<u8>,
+        /// Where drafts are written with `--write` (default: ./snippets).
+        #[arg(long, value_name = "DIR")]
+        out: Option<PathBuf>,
+        /// Write the file instead of printing it.
+        #[arg(long)]
+        write: bool,
+    },
     /// Show or set the level you are reading at (1 = just started, 5 = fluent).
     Level {
         /// The new level, 1 to 5. Omit to see the current one.
@@ -128,6 +145,28 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
+}
+
+/// `--lines 12-24` (or `--lines 12`) as a 1-based slice of a file.
+fn slice_lines(source: &str, span: &str) -> Result<String> {
+    let (start, end) = match span.split_once('-') {
+        Some((start, end)) => (start.trim().parse::<usize>()?, end.trim().parse::<usize>()?),
+        None => {
+            let only = span.trim().parse::<usize>()?;
+            (only, only)
+        }
+    };
+    if start == 0 || start > end {
+        bail!("`--lines {span}` is not a range — try `--lines 12-24`");
+    }
+    let lines: Vec<&str> = source.lines().collect();
+    if end > lines.len() {
+        bail!(
+            "`--lines {span}` runs past the end of the file, which has {} lines",
+            lines.len()
+        );
+    }
+    Ok(lines[start - 1..end].join("\n"))
 }
 
 fn main() -> Result<()> {
@@ -149,8 +188,9 @@ fn main() -> Result<()> {
             let mut out = io::stdout();
 
             // The level decides what the picker may offer, so it is settled
-            // before the first snippet is chosen.
-            if progress.level.is_none() {
+            // before the first snippet is chosen. Naming a snippet yourself
+            // answers the question the level would have answered.
+            if progress.level.is_none() && cli.snippet.is_none() {
                 let level = {
                     let mut term = session::Terminal {
                         input: &mut input,
@@ -218,6 +258,105 @@ fn main() -> Result<()> {
                     writeln!(out)?;
                     writeln!(out, "{}", style.dim(&advice))?;
                 }
+            }
+            Ok(())
+        }
+
+        Command::Draft {
+            path,
+            span,
+            level,
+            out,
+            write,
+        } => {
+            let mut out_writer = io::stdout();
+            let source = std::fs::read_to_string(&path)
+                .with_context(|| format!("cannot read {}", path.display()))?;
+            let code = match &span {
+                Some(span) => slice_lines(&source, span)?,
+                None => source.clone(),
+            };
+            if code.trim().is_empty() {
+                bail!("{} has nothing to draft from", path.display());
+            }
+
+            let language = readcode::draft::language_for(&path, &corpus.languages());
+            let level = level.unwrap_or(2);
+            if !(1..=readcode::snippet::MAX_LEVEL).contains(&level) {
+                bail!(
+                    "{} — {level} is not one of them",
+                    readcode::draft::level_help()
+                );
+            }
+
+            let backend = choose_backend(&cli).ok_or_else(no_reviewer)?;
+            let agent_cwd = data_dir.join("agent");
+            std::fs::create_dir_all(&agent_cwd).ok();
+            let reviewer = build_reviewer(&cli, backend, agent_cwd)?;
+
+            let known: Vec<String> = corpus
+                .snippets()
+                .iter()
+                .flat_map(|snippet| snippet.concepts())
+                .collect();
+            let id = readcode::draft::next_id(
+                corpus.snippets().iter().map(|snippet| snippet.id.clone()),
+                &language,
+            );
+            let task = readcode::draft::prompt(&code, &language, path.to_str(), level, &known);
+
+            writeln!(
+                out_writer,
+                "{}",
+                style.dim(&format!(
+                    "drafting {id} from {} ({language}, level {level}) with {}",
+                    path.display(),
+                    reviewer.name()
+                ))
+            )?;
+
+            let reply = reviewer
+                .ask(&task)
+                .with_context(|| format!("{} could not draft this snippet", reviewer.name()))?;
+            let toml = readcode::draft::from_reply(&reply, &id, &language, Some(level))?;
+
+            if write {
+                let root = out.unwrap_or_else(|| PathBuf::from("snippets"));
+                // TOML ignores the leading comment, so the draft parses as-is.
+                let title = toml::from_str::<toml::Value>(&toml)
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .get("title")
+                            .and_then(|title| title.as_str())
+                            .map(str::to_string)
+                    })
+                    .unwrap_or_else(|| id.clone());
+                let dir = root.join(&language);
+                std::fs::create_dir_all(&dir)?;
+                let file = dir.join(format!("{id}-{}.toml", readcode::draft::slug(&title)));
+                std::fs::write(&file, &toml)?;
+                writeln!(
+                    out_writer,
+                    "{}",
+                    style.bold(&format!("wrote {}", file.display()))
+                )?;
+                writeln!(
+                    out_writer,
+                    "{}",
+                    style.dim(&format!(
+                        "read it, fix the asks and notes, then: readcode --corpus {} check",
+                        root.display()
+                    ))
+                )?;
+            } else {
+                writeln!(out_writer)?;
+                writeln!(out_writer, "{toml}")?;
+                writeln!(
+                    out_writer,
+                    "{}",
+                    style.dim("add --write --out <dir> to keep it; read it before you trust it")
+                )?;
             }
             Ok(())
         }

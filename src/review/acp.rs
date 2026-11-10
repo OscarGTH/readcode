@@ -693,6 +693,11 @@ impl Reviewer for AcpReviewer {
         }
         Ok(grade)
     }
+
+    fn ask(&self, task: &str) -> Result<String> {
+        let mut client = self.connect()?;
+        client.prompt(&contract::prime(task))
+    }
 }
 
 #[cfg(test)]

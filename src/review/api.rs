@@ -183,6 +183,10 @@ impl Reviewer for ApiReviewer {
         let raw = parse_json_object(&text)?;
         Grade::from_raw(prompts, raw, &self.name())
     }
+
+    fn ask(&self, task: &str) -> Result<String> {
+        self.complete(contract::CONTRACT, task)
+    }
 }
 
 fn first_env(keys: &[&str]) -> Option<String> {

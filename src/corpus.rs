@@ -118,6 +118,18 @@ impl Corpus {
         &self.snippets
     }
 
+    /// The languages the corpus covers, for guessing what a file is.
+    pub fn languages(&self) -> Vec<String> {
+        let mut found: Vec<String> = self
+            .snippets()
+            .iter()
+            .map(|snippet| snippet.language.clone())
+            .collect();
+        found.sort();
+        found.dedup();
+        found
+    }
+
     pub fn is_empty(&self) -> bool {
         self.snippets.is_empty()
     }
