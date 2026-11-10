@@ -96,10 +96,11 @@ fn highlight_line(line: &str, style: Style, state: &mut State) -> String {
                 continue;
             }
             // Otherwise a lifetime: 'static, 'a
-            let len = rest[1..]
+            let body = rest.strip_prefix('\'').unwrap_or(rest);
+            let offset = body
                 .find(|c: char| !(c.is_alphanumeric() || c == '_'))
-                .map(|offset| offset + 1)
-                .unwrap_or(rest.len());
+                .unwrap_or(body.len());
+            let len = 1 + offset;
             out.push_str(&style.yellow(&rest[..len]));
             index += len;
             continue;
