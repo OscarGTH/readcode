@@ -3,6 +3,7 @@ language = "rust"
 title = "Counting words with the entry API"
 source = "the shape of every word-count in Rust"
 intro = "Counting words with the `entry` API — every line does something different."
+levels = [3, 3]
 
 code = '''
 use std::collections::HashMap;

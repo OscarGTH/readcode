@@ -46,9 +46,48 @@ Then everyday:
 ```sh
 readcode            # annotate the snippet that is most due
 readcode status     # what you have mastered, what is due
-readcode list       # the snippets available
+readcode list       # the snippets available, with their levels
+readcode level      # what level you are reading at
 readcode models     # which models your agent offers
 ```
+
+The first run asks one question — how much of the language you can read — and starts you
+on the easiest material that fits. Answering it honestly matters more than answering it
+flatteringly: the app would rather hand you five easy lines than a file you cannot start.")["success"])
+
+# The levels section, before "Blocks or lines".
+print(patch(p, ### Levels
+
+Every snippet is written for a rung, 1 to 5, easiest first:
+
+```
+1 · just started — values, arithmetic, printing
+2 · small functions — branches, loops, one borrow at a time
+3 · whole modules — structs, methods, iterators, error handling
+4 · unfamiliar crates — traits, generics, lifetimes
+5 · reads Rust for a living
+```
+
+`readcode level 2` sets yours, and `readcode level` shows the rungs with yours marked. The
+level does two things:
+
+- **It caps what is offered.** Snippets above your level plus one stop appearing, however
+  due their concepts are. The one rung above is deliberate: a stretch you can mostly read
+  is what moves you up.
+- **It starts you at the bottom of that rung.** While anything at or below your level still
+  has something unmastered, the app keeps choosing from it instead of drifting upward. Once
+  that rung is solid, harder material joins the rotation and `readcode status` says so:
+  `you have cleared level 1 (12 of 12 concepts solid) — readcode level 2 opens up harder code`.
+
+A snippet can declare a band instead of a single rung (`levels = [2, 4]`), which is how
+"this is a level 2 idea but the code itself is level 4" gets expressed.
+
+Your level is a claim about you, not a gate: nothing stops you from running
+`readcode --snippet 003` at level 2 to try the iterator chain, and it will not move your
+level down if you struggle. Setting it lower is the useful direction — going back over the
+easy material is cheap, and being dropped into code you cannot read teaches nothing.
+
+### Blocks or lines
 
 Progress is saved between runs, so `readcode` is the same command every day.
 
@@ -228,6 +267,10 @@ Snippet:
   *is*. Both are descriptive; the app already explains what the learner has to do.
 - `asks` — optional: `"blocks"`, `"lines"` or `"auto"` (default: lines if the snippet has
   `blocks.line` entries, otherwise blocks).
+- `level` — optional: the rung this snippet is written for, 1 to 5. Omit it and the snippet
+  is offered to everyone, which is the right default for a small personal corpus.
+- `levels = [from, to]` — optional: a band, for a simple idea shown in code that is harder
+  to read than the idea. `level` and `levels` are mutually exclusive.
 
 Block:
 
@@ -257,6 +300,9 @@ count lines by hand to find the off-by-one.
   example, because that is the skill you are training.
 - **6–15 lines, 2–4 blocks.** Long enough to be real, short enough to finish in one
   sitting.
+- **Say which rung it is.** `level = 1` for code a beginner can read line by line, `level = 4`
+  for a lifetime puzzle in an unfamiliar crate. An unlevelled snippet is offered to
+  everybody, which in practice means it lands on a beginner and stalls them.
 - **One idea per block.** If a block needs two unrelated concepts, it is two blocks.
 - **Write the note as the correction.** If you cannot state what the learner should have
   said in one sentence, the concept is too vague to grade — and a concept with no note is
@@ -286,7 +332,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 120 tests, no network, no agent
+cargo test                        # 133 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

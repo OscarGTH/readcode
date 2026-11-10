@@ -1,0 +1,37 @@
+id = "rust-006"
+language = "rust"
+title = "Five lines, nothing hidden"
+level = 1
+intro = "The smallest complete program: two numbers, one sum, one line of output."
+code = '''
+fn main() {
+    let apples = 3;
+    let pears = 2;
+    let total = apples + pears;
+    println!("{total} pieces of fruit");
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What is this line for?"
+concepts = ["rust.fn.main"]
+notes = { "rust.fn.main" = "`main` is where the program starts; every executable Rust program has one." }
+
+[[blocks]]
+lines = [2, 3]
+ask = "What do these two lines create?"
+concepts = ["rust.binding.immutable"]
+notes = { "rust.binding.immutable" = "`let` binds a name to a value; without `mut` the name cannot be reassigned." }
+
+[[blocks]]
+lines = [4, 4]
+ask = "How is `total` worked out?"
+concepts = ["rust.operator.arith"]
+notes = { "rust.operator.arith" = "`+` adds the two integers that the names refer to; the result is bound to a new name." }
+
+[[blocks]]
+lines = [5, 6]
+ask = "What ends up on the terminal, and what does `{total}` do?"
+concepts = ["rust.macro.println", "rust.format.capture"]
+notes = { "rust.format.capture" = "`{total}` is captured from the surrounding scope by name, so no argument is passed after the string.", "rust.macro.println" = "`println` is a macro that writes a line to standard output." }

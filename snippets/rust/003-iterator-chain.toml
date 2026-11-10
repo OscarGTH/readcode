@@ -3,6 +3,7 @@ language = "rust"
 title = "Iterator adaptors: a filter/map/collect chain"
 source = "idiomatic Rust over a slice of records"
 intro = "A filter/map/collect chain that pulls the error messages out of a slice of log lines."
+levels = [3, 4]
 
 code = '''
 #[derive(Debug)]

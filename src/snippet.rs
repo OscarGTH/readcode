@@ -55,8 +55,72 @@ pub struct Snippet {
     /// Granularity for this snippet. `auto` lets the session decide.
     #[serde(default)]
     pub asks: Asks,
+    /// The level this snippet starts at, as sugar for `levels = [n, n]`.
+    #[serde(default)]
+    pub level: Option<u8>,
+    /// The band of learner levels this snippet suits.
+    #[serde(default)]
+    pub levels: Option<[u8; 2]>,
     pub code: String,
     pub blocks: Vec<Block>,
+}
+
+/// The five rungs a corpus is sorted into, easiest first.
+pub const MAX_LEVEL: u8 = 5;
+
+/// What each rung means, in the learner's terms rather than the language's.
+pub const LEVELS: [&str; MAX_LEVEL as usize] = [
+    "just started — values, arithmetic, printing",
+    "small functions — branches, loops, one borrow at a time",
+    "whole modules — structs, methods, iterators, error handling",
+    "unfamiliar crates — traits, generics, lifetimes",
+    "reads Rust for a living",
+];
+
+/// The band of levels a snippet is written for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Levels {
+    pub from: u8,
+    pub to: u8,
+}
+
+impl Default for Levels {
+    /// A snippet that says nothing about its level is offered to everyone, so
+    /// hand-written corpora keep working without the field.
+    fn default() -> Self {
+        Self {
+            from: 1,
+            to: MAX_LEVEL,
+        }
+    }
+}
+
+impl Levels {
+    pub fn label(&self) -> String {
+        if self.from == self.to {
+            format!("level {}", self.from)
+        } else {
+            format!("levels {}-{}", self.from, self.to)
+        }
+    }
+
+    /// Whether a learner at `level` should be offered this at all. One rung
+    /// above is allowed — that is the stretch that teaches — but no further.
+    pub fn reachable(&self, level: u8) -> bool {
+        self.from <= level.saturating_add(1)
+    }
+
+    /// How far this sits from the learner, for ranking. Being thrown in above
+    /// your level costs more than revising below it.
+    pub fn distance(&self, level: u8) -> f64 {
+        if self.from > level {
+            f64::from(self.from - level) * 0.6
+        } else if self.to < level {
+            f64::from(level - self.to) * 0.25
+        } else {
+            0.0
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -132,6 +196,18 @@ impl Snippet {
     pub fn parse(text: &str) -> Result<Self> {
         let snippet: Snippet = toml::from_str(text)?;
         Ok(snippet)
+    }
+
+    /// Which rungs this snippet is written for.
+    pub fn levels(&self) -> Levels {
+        match (self.level, self.levels) {
+            (_, Some([from, to])) => Levels { from, to },
+            (Some(level), None) => Levels {
+                from: level,
+                to: level,
+            },
+            (None, None) => Levels::default(),
+        }
     }
 
     pub fn code_lines(&self) -> Vec<&str> {
@@ -287,6 +363,20 @@ impl Snippet {
     pub fn validate(&self) -> Result<()> {
         if self.id.trim().is_empty() {
             bail!("snippet has an empty id");
+        }
+        if self.level.is_some() && self.levels.is_some() {
+            bail!(
+                "snippet `{}`: set either `level` (one rung) or `levels` (a range), not both",
+                self.id
+            );
+        }
+        let levels = self.levels();
+        if levels.from == 0 || levels.to > MAX_LEVEL || levels.from > levels.to {
+            bail!(
+                "snippet `{}`: `{}` is out of range — levels run 1 to {MAX_LEVEL}, lowest first",
+                self.id,
+                levels.label()
+            );
         }
         if self.code.trim().is_empty() {
             bail!("snippet `{}` has no code", self.id);
@@ -476,6 +566,75 @@ lines = [2, 2]
 ask = "what is b?"
 concepts = ["rust.binding"]
 "#;
+
+    /// The same snippet with a level clause injected after the title.
+    fn with_level(clause: &str) -> Snippet {
+        let text = OK.replace("title = \"test\"", &format!("title = \"test\"\n{clause}"));
+        Snippet::parse(&text).expect("parses")
+    }
+
+    #[test]
+    fn a_snippet_can_declare_one_level_or_a_band() {
+        let one = with_level("level = 1");
+        assert_eq!(one.levels(), Levels { from: 1, to: 1 });
+        assert_eq!(one.levels().label(), "level 1");
+
+        let band = with_level("levels = [2, 4]");
+        assert_eq!(band.levels(), Levels { from: 2, to: 4 });
+        assert_eq!(band.levels().label(), "levels 2-4");
+        band.validate().unwrap();
+    }
+
+    #[test]
+    fn a_snippet_without_a_level_is_for_everyone() {
+        let plain = with_level("");
+        assert_eq!(
+            plain.levels(),
+            Levels {
+                from: 1,
+                to: MAX_LEVEL
+            }
+        );
+        plain.validate().unwrap();
+    }
+
+    #[test]
+    fn impossible_levels_are_rejected() {
+        for clause in [
+            "level = 0",
+            "level = 6",
+            "levels = [3, 2]",
+            "levels = [0, 2]",
+        ] {
+            let snippet = with_level(clause);
+            let error = snippet
+                .validate()
+                .expect_err(&format!("`{clause}` should be rejected"));
+            assert!(
+                format!("{error}").contains("out of range"),
+                "{clause}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn level_and_levels_together_are_ambiguous() {
+        let snippet = with_level("level = 1\nlevels = [1, 2]");
+        let error = snippet.validate().expect_err("ambiguous");
+        assert!(format!("{error}").contains("not both"), "{error}");
+    }
+
+    #[test]
+    fn one_rung_of_stretch_is_reachable_and_no_more() {
+        let one = Levels { from: 1, to: 1 };
+        assert!(one.reachable(1));
+        assert!(Levels { from: 2, to: 2 }.reachable(1));
+        assert!(!Levels { from: 3, to: 4 }.reachable(1));
+        assert!(Levels { from: 3, to: 4 }.reachable(2));
+        // Distance: above your level costs more than revising below it.
+        assert_eq!(one.distance(1), 0.0);
+        assert!(Levels { from: 3, to: 3 }.distance(1) > one.distance(3));
+    }
 
     /// Two blocks; the second carries a closing brace and an authored line prompt.
     const WITH_LINES: &str = r#"

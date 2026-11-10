@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::corpus::Corpus;
 use crate::review::{Annotation, Grade, Reviewer};
-use crate::snippet::{Asks, Snippet};
+use crate::snippet::{Asks, LEVELS, MAX_LEVEL, Snippet};
 use crate::srs::ConceptState;
 use crate::store::{Event, Progress};
 use crate::tui::{self, Action};
@@ -43,8 +43,48 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
         return None;
     }
 
-    let weighted: Vec<(f64, &Snippet)> = corpus
-        .snippets()
+    // A declared level limits the menu to what the learner can actually read,
+    // plus one rung of stretch. No declared level means no filter.
+    let mut pool: Vec<&Snippet> = match progress.level {
+        Some(level) => {
+            let reachable: Vec<&Snippet> = corpus
+                .snippets()
+                .iter()
+                .filter(|snippet| snippet.levels().reachable(level))
+                .collect();
+            if reachable.is_empty() {
+                corpus.snippets().iter().collect()
+            } else {
+                reachable
+            }
+        }
+        None => corpus.snippets().iter().collect(),
+    };
+
+    // Start at the bottom of your own level: while there is still something to
+    // learn at or below it, the rung above waits. That is the difference between
+    // "you may read this" and "this is what you are reading next".
+    if let Some(level) = progress.level {
+        let at_or_below: Vec<&Snippet> = pool
+            .iter()
+            .copied()
+            .filter(|snippet| snippet.levels().from <= level)
+            .collect();
+        let rung_is_solid = !at_or_below.is_empty()
+            && at_or_below.iter().all(|snippet| {
+                snippet.concepts().iter().all(|concept| {
+                    progress
+                        .concepts
+                        .get(concept)
+                        .is_some_and(|state| state.is_mastered())
+                })
+            });
+        if !rung_is_solid {
+            pool = at_or_below;
+        }
+    }
+
+    let weighted: Vec<(f64, &Snippet)> = pool
         .iter()
         .map(|snippet| {
             let concepts = snippet.concepts();
@@ -61,7 +101,13 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
             } else {
                 1.15
             };
-            (average * novelty, snippet)
+            // Content at the learner's level beats content far from it, so a
+            // beginner meets `let` before they meet an iterator chain.
+            let fit = match progress.level {
+                Some(level) => 1.0 / (1.0 + snippet.levels().distance(level)),
+                None => 1.0,
+            };
+            (average * novelty * fit, *snippet)
         })
         .collect();
 
@@ -89,6 +135,99 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
         }
     }
     candidates.last().map(|(_, snippet)| *snippet)
+}
+
+/// A nudge upwards once everything at the learner's level is solid. The level is
+/// theirs to set; this only says when the current rung has stopped teaching.
+pub fn level_advice(corpus: &Corpus, progress: &Progress) -> Option<String> {
+    let level = progress.level?;
+    if level >= MAX_LEVEL {
+        return None;
+    }
+    let mut seen = 0usize;
+    let mut mastered = 0usize;
+    for snippet in corpus.snippets() {
+        if snippet.levels().to > level {
+            continue;
+        }
+        for concept in snippet.concepts() {
+            let Some(state) = progress.concepts.get(&concept) else {
+                continue;
+            };
+            seen += 1;
+            if state.is_mastered() {
+                mastered += 1;
+            }
+        }
+    }
+    if seen >= 3 && mastered * 4 >= seen * 3 {
+        return Some(format!(
+            "you have cleared level {level} ({mastered} of {seen} concepts solid) — `readcode level {}` opens up harder code",
+            level + 1
+        ));
+    }
+    None
+}
+
+/// The one-time question, asked on the normal screen before the sitting so it
+/// works the same in the full-screen view and the plain one.
+pub fn ask_level(term: &mut Terminal<'_>) -> Result<u8> {
+    writeln!(term.out)?;
+    writeln!(
+        term.out,
+        "{}",
+        term.style.bold("How much Rust can you read right now?")
+    )?;
+    for (index, description) in LEVELS.iter().enumerate() {
+        writeln!(
+            term.out,
+            "  {} {}",
+            term.style.cyan(&format!("{} ·", index + 1)),
+            description
+        )?;
+    }
+    writeln!(
+        term.out,
+        "{}",
+        term.style
+            .dim("this decides what you are offered first; `readcode level <n>` changes it")
+    )?;
+
+    for attempt in 0..3 {
+        write!(
+            term.out,
+            "{} ",
+            term.style.cyan(&format!("level 1-{MAX_LEVEL} [1]:"))
+        )?;
+        term.out.flush()?;
+
+        let mut line = String::new();
+        let read = term.input.read_line(&mut line)?;
+        let answer = line.trim();
+        if read == 0 || answer.is_empty() {
+            // Piped input, or enter: first rung. Nothing is lost by starting low.
+            return Ok(1);
+        }
+        match answer.parse::<u8>() {
+            Ok(level) if (1..=MAX_LEVEL).contains(&level) => return Ok(level),
+            _ => {
+                if attempt < 2 {
+                    writeln!(
+                        term.out,
+                        "{}",
+                        term.style
+                            .yellow(&format!("pick a number from 1 to {MAX_LEVEL}"))
+                    )?;
+                }
+            }
+        }
+    }
+    writeln!(
+        term.out,
+        "{}",
+        term.style.dim("no answer — starting at level 1")
+    )?;
+    Ok(1)
 }
 
 /// Which granularity to use for a snippet, given what came before.
@@ -444,6 +583,46 @@ mod tests {
         Corpus::builtin().unwrap()
     }
 
+    fn terminal<'a>(input: &'a mut std::io::Cursor<String>, out: &'a mut Vec<u8>) -> Terminal<'a> {
+        Terminal {
+            input,
+            out,
+            style: Style::new(false),
+        }
+    }
+
+    #[test]
+    fn the_first_run_question_takes_a_level() {
+        for (stdin, want) in [("3\n", 3), ("5\n", 5), ("\n", 1), ("", 1)] {
+            let mut input = std::io::Cursor::new(stdin.to_string());
+            let mut out: Vec<u8> = Vec::new();
+            let level = ask_level(&mut terminal(&mut input, &mut out)).unwrap();
+            assert_eq!(level, want, "stdin {stdin:?}");
+            let screen = String::from_utf8_lossy(&out).to_string();
+            assert!(screen.contains("How much Rust can you read"), "{screen}");
+            for description in LEVELS {
+                assert!(screen.contains(description), "{screen}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_wrong_answer_is_asked_again_and_then_accepted() {
+        let mut input = std::io::Cursor::new("9\nyes\n2\n".to_string());
+        let mut out: Vec<u8> = Vec::new();
+        let level = ask_level(&mut terminal(&mut input, &mut out)).unwrap();
+        assert_eq!(level, 2);
+        let screen = String::from_utf8_lossy(&out).to_string();
+        assert_eq!(screen.matches("pick a number").count(), 2, "{screen}");
+    }
+
+    #[test]
+    fn nonsense_answers_fall_back_to_the_first_rung() {
+        let mut input = std::io::Cursor::new("nope\nnope\nnope\n".to_string());
+        let mut out: Vec<u8> = Vec::new();
+        assert_eq!(ask_level(&mut terminal(&mut input, &mut out)).unwrap(), 1);
+    }
+
     /// Runs a sitting over piped input; returns the outcome and the screen.
     fn sitting(
         snippet: &Snippet,
@@ -466,6 +645,105 @@ mod tests {
     /// One short answer per prompt, each finished with `.`.
     fn answers(snippet: &Snippet, mode: Asks, text: &str) -> String {
         format!("{text}\n.\n").repeat(snippet.prompts(mode).len())
+    }
+
+    #[test]
+    fn the_declared_level_limits_what_is_offered() {
+        let corpus = corpus();
+        // One rung of stretch above a declared level 1 is allowed; a level 3
+        // snippet is not, however due it might be.
+        for seed in 0..200u64 {
+            let mut progress = Progress {
+                level: Some(1),
+                ..Progress::default()
+            };
+            progress.last_snippet = None;
+            let picked = pick(&corpus, &progress, seed).expect("a snippet");
+            assert!(
+                picked.levels().from <= 2,
+                "level 1 learner offered {:?} ({})",
+                picked.id,
+                picked.levels().label()
+            );
+        }
+    }
+
+    #[test]
+    fn a_beginner_is_started_on_the_simplest_snippet() {
+        let corpus = corpus();
+        let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+        for seed in 0..300u64 {
+            let progress = Progress {
+                level: Some(1),
+                ..Progress::default()
+            };
+            let picked = pick(&corpus, &progress, seed).expect("a snippet");
+            *counts.entry(picked.levels().from.to_string()).or_default() += 1;
+        }
+        let easiest = counts.get("1").copied().unwrap_or(0);
+        let next = counts.get("2").copied().unwrap_or(0);
+        assert!(
+            easiest > 0,
+            "nothing at level 1 was ever offered: {counts:?}"
+        );
+        assert!(
+            easiest > next,
+            "level 1 should dominate at level 1: {counts:?}"
+        );
+    }
+
+    #[test]
+    fn a_declared_level_above_the_corpus_still_offers_something() {
+        let corpus = corpus();
+        let progress = Progress {
+            level: Some(5),
+            ..Progress::default()
+        };
+        assert!(pick(&corpus, &progress, 7).is_some());
+    }
+
+    #[test]
+    fn no_declared_level_means_no_filter() {
+        let corpus = corpus();
+        let mut seen_high = false;
+        for seed in 0..200u64 {
+            let progress = Progress::default();
+            let picked = pick(&corpus, &progress, seed).expect("a snippet");
+            if picked.levels().from >= 3 {
+                seen_high = true;
+            }
+        }
+        assert!(
+            seen_high,
+            "an unset level should not hide the harder snippets"
+        );
+    }
+
+    #[test]
+    fn the_advice_appears_once_the_rung_is_solid() {
+        let corpus = corpus();
+        let mut progress = Progress {
+            level: Some(1),
+            ..Progress::default()
+        };
+        assert!(level_advice(&corpus, &progress).is_none());
+
+        let at_level: Vec<String> = corpus
+            .snippets()
+            .iter()
+            .filter(|snippet| snippet.levels().to <= 1)
+            .flat_map(|snippet| snippet.concepts().into_iter())
+            .collect();
+        assert!(!at_level.is_empty(), "the corpus needs level-1 content");
+
+        for concept in &at_level {
+            for _ in 0..4 {
+                progress.concept_mut(concept).apply(Verdict::Correct, 1_000);
+            }
+        }
+        let advice = level_advice(&corpus, &progress).expect("advice once the rung is solid");
+        assert!(advice.contains("cleared level 1"), "{advice}");
+        assert!(advice.contains("readcode level 2"), "{advice}");
     }
 
     #[test]
@@ -652,13 +930,24 @@ mod tests {
             state.due_at = 0;
         }
 
+        // Concepts are shared between snippets, so zeroing rust-003's concepts
+        // also weakens every snippet that teaches the same ids. The assertion is
+        // therefore about the weak concepts, not about one id.
+        let weak: std::collections::BTreeSet<String> = target.concepts().into_iter().collect();
         let mut hits = 0;
         for seed in 0..40u64 {
-            if pick(&corpus, &progress, seed).unwrap().id == target.id {
+            let picked = pick(&corpus, &progress, seed).unwrap();
+            let overlaps = picked.concepts().intersection(&weak).next().is_some();
+            assert!(
+                overlaps,
+                "picked {} which teaches none of the weak concepts",
+                picked.id
+            );
+            if picked.id == target.id {
                 hits += 1;
             }
         }
-        assert!(hits > 20, "weak snippet was picked {hits}/40 times");
+        assert!(hits > 5, "weak snippet was picked {hits}/40 times");
     }
 
     #[test]

@@ -35,6 +35,10 @@ pub struct Progress {
     pub updated_at: u64,
     #[serde(default)]
     pub sessions: u32,
+    /// The learner's declared level, 1..=5. Unset until they say, which keeps
+    /// the picker unfiltered for anyone who never answers the question.
+    #[serde(default)]
+    pub level: Option<u8>,
     /// The snippet shown last, so the next pick can be a different one.
     #[serde(default)]
     pub last_snippet: Option<String>,
@@ -61,6 +65,7 @@ impl Default for Progress {
             created_at: 0,
             updated_at: 0,
             sessions: 0,
+            level: None,
             last_snippet: None,
             seen_snippets: Vec::new(),
             last_modes: BTreeMap::new(),

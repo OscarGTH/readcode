@@ -1,0 +1,28 @@
+id = "rust-008"
+language = "rust"
+title = "A struct, built and read"
+level = 2
+intro = "A type with two fields, one value of that type, and a field read."
+code = '''
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+fn main() {
+    let origin = Point { x: 0.0, y: 0.0 };
+    println!("{:.1} {:.1}", origin.x, origin.y);
+}
+'''
+
+[[blocks]]
+lines = [1, 5]
+ask = "What does this declaration define, and when does it do anything?"
+concepts = ["rust.struct"]
+notes = { "rust.struct" = "It defines a new named type with two `f64` fields; a declaration creates no value by itself." }
+
+[[blocks]]
+lines = [6, 9]
+ask = "What is `origin`, and what do `origin.x` and `origin.y` give you?"
+concepts = ["rust.struct.literal", "rust.field.access", "rust.format.float"]
+notes = { "rust.struct.literal" = "`Point { x: 0.0, y: 0.0 }` builds a value of type `Point` with both fields set.", "rust.field.access" = "`origin.x` reads a field by name; reading does not move the value or copy the struct.", "rust.format.float" = "`{:.1}` prints a float with one decimal place." }

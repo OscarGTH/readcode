@@ -3,6 +3,7 @@ language = "rust"
 title = "Ownership: moving a String into a function"
 source = "adapted from The Rust Book, ch. 4.1"
 intro = "Ownership in practice: a function takes a String, mutates it, and hands it back."
+levels = [2, 3]
 
 code = '''
 fn shout(mut text: String) -> String {

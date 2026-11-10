@@ -3,6 +3,7 @@ language = "rust"
 title = "A struct with behaviour: impl, &mut self and a loop"
 source = "the shape of most small Rust types"
 intro = "A struct with one mutating method, driven by a loop that checks its return value."
+levels = [2, 3]
 
 code = '''
 #[derive(Default)]

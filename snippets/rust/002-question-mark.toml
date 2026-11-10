@@ -3,6 +3,7 @@ language = "rust"
 title = "The `?` operator: turning errors into early returns"
 source = "idiomatic Rust built on std::fs and std::str::FromStr"
 intro = "Error handling with `?`: two fallible calls in one function, and a `main` that may fail."
+levels = [2, 2]
 
 code = '''
 use std::fs;

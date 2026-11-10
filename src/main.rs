@@ -117,6 +117,11 @@ enum Command {
         #[arg(long)]
         no_save: bool,
     },
+    /// Show or set the level you are reading at (1 = just started, 5 = fluent).
+    Level {
+        /// The new level, 1 to 5. Omit to see the current one.
+        level: Option<u8>,
+    },
     /// Delete saved progress.
     Reset {
         /// Required: this is irreversible.
@@ -140,6 +145,24 @@ fn main() -> Result<()> {
 
     match cli.command.clone().unwrap_or(Command::Next) {
         Command::Next => {
+            let mut input = io::stdin().lock();
+            let mut out = io::stdout();
+
+            // The level decides what the picker may offer, so it is settled
+            // before the first snippet is chosen.
+            if progress.level.is_none() {
+                let level = {
+                    let mut term = session::Terminal {
+                        input: &mut input,
+                        out: &mut out,
+                        style,
+                    };
+                    session::ask_level(&mut term)?
+                };
+                progress.level = Some(level);
+                progress.save(&progress_path)?;
+            }
+
             let chosen = match &cli.snippet {
                 Some(needle) => corpus.find(needle)?,
                 None => session::pick(&corpus, &progress, now)
@@ -159,38 +182,105 @@ fn main() -> Result<()> {
                 session::choose_mode(chosen, &progress)
             };
 
-            let mut input = io::stdin().lock();
-            let mut out = io::stdout();
-            let mut term = session::Terminal {
-                input: &mut input,
-                out: &mut out,
-                style,
-            };
             // Full screen when there is a screen to fill, plain lines when the
             // output is being piped somewhere.
             let interactive =
                 !cli.no_tui && io::stdin().is_terminal() && io::stdout().is_terminal();
-            let outcome = if interactive {
-                session::run_tui(
-                    chosen,
-                    mode,
-                    reviewer.as_ref(),
-                    &mut progress,
-                    now,
-                    &mut term,
-                )?
-            } else {
-                session::run(
-                    chosen,
-                    mode,
-                    reviewer.as_ref(),
-                    &mut progress,
-                    now,
-                    &mut term,
-                )?
+            let outcome = {
+                let mut term = session::Terminal {
+                    input: &mut input,
+                    out: &mut out,
+                    style,
+                };
+                if interactive {
+                    session::run_tui(
+                        chosen,
+                        mode,
+                        reviewer.as_ref(),
+                        &mut progress,
+                        now,
+                        &mut term,
+                    )?
+                } else {
+                    session::run(
+                        chosen,
+                        mode,
+                        reviewer.as_ref(),
+                        &mut progress,
+                        now,
+                        &mut term,
+                    )?
+                }
             };
             if outcome.is_some() {
                 progress.save(&progress_path)?;
+                if let Some(advice) = session::level_advice(&corpus, &progress) {
+                    writeln!(out)?;
+                    writeln!(out, "{}", style.dim(&advice))?;
+                }
+            }
+            Ok(())
+        }
+
+        Command::Level { level } => {
+            let mut out = io::stdout();
+            match level {
+                Some(level) => {
+                    if !(1..=readcode::snippet::MAX_LEVEL).contains(&level) {
+                        bail!(
+                            "levels run 1 to {} — {level} is not one of them",
+                            readcode::snippet::MAX_LEVEL
+                        );
+                    }
+                    progress.level = Some(level);
+                    progress.save(&progress_path)?;
+                    writeln!(
+                        out,
+                        "{}",
+                        style.bold(&format!(
+                            "level {level} · {}",
+                            readcode::snippet::LEVELS[level as usize - 1]
+                        ))
+                    )?;
+                    writeln!(
+                        out,
+                        "{}",
+                        style.dim(
+                            "`readcode` now offers snippets at this level, plus one rung above"
+                        )
+                    )?;
+                }
+                None => {
+                    writeln!(out, "{}", style.bold("how much Rust can you read?"))?;
+                    for (index, description) in readcode::snippet::LEVELS.iter().enumerate() {
+                        let number = index as u8 + 1;
+                        let here = progress.level == Some(number);
+                        writeln!(
+                            out,
+                            "  {} {} {}",
+                            if here {
+                                style.cyan("→")
+                            } else {
+                                " ".to_string()
+                            },
+                            style.dim(&format!("{number} ·")),
+                            description
+                        )?;
+                    }
+                    writeln!(out)?;
+                    match progress.level {
+                        Some(level) => writeln!(
+                            out,
+                            "{}",
+                            style.dim(&format!("set to {level} — `readcode level <1-5>` to change it"))
+                        )?,
+                        None => writeln!(
+                            out,
+                            "{}",
+                            style.dim("not set yet — `readcode level <1-5>` sets it, or just run `readcode`")
+                        )?,
+                    }
+                }
             }
             Ok(())
         }
@@ -207,6 +297,17 @@ fn main() -> Result<()> {
                 .filter(|state| state.due_at != 0 && state.due_at <= now)
                 .count();
             writeln!(out)?;
+            let level = match progress.level {
+                Some(level) => format!(
+                    "level {level} · {}",
+                    readcode::snippet::LEVELS[level as usize - 1]
+                ),
+                None => "level not set".to_string(),
+            };
+            writeln!(out, "{}", style.dim(&level))?;
+            if let Some(advice) = session::level_advice(&corpus, &progress) {
+                writeln!(out, "{}", style.cyan(&advice))?;
+            }
             writeln!(
                 out,
                 "{}",
@@ -232,10 +333,11 @@ fn main() -> Result<()> {
                 let mode = snippet.resolve_mode(snippet.asks);
                 writeln!(
                     out,
-                    "{}  {:<5} {:<52} {} blocks · {} concepts · asks {:<6} · {seen}",
+                    "{}  {:<5} {:<46} {:<9} {} blocks · {} concepts · asks {:<6} · {seen}",
                     style.bold(&snippet.id),
                     snippet.language,
                     snippet.title,
+                    snippet.levels().label(),
                     snippet.blocks.len(),
                     snippet.concepts().len(),
                     mode.label()

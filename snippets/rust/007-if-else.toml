@@ -1,0 +1,37 @@
+id = "rust-007"
+language = "rust"
+title = "One decision, two answers"
+level = 1
+intro = "A function that returns different text depending on the number it is given."
+code = '''
+fn label(n: i32) -> &'static str {
+    if n % 2 == 0 {
+        "even"
+    } else {
+        "odd"
+    }
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "Read the signature: what goes in, and what comes back?"
+concepts = ["rust.fn.return", "rust.lifetime.static"]
+notes = { "rust.fn.return" = "It takes an `i32` by value and returns a `&'static str` — text that lives for the whole program.", "rust.lifetime.static" = "`&'static str` is a borrowed string that outlives any caller, which is why returning a literal is fine." }
+
+[[blocks]]
+lines = [2, 7]
+ask = "How does this decide which text to return?"
+concepts = ["rust.if.expr", "rust.operator.modulo"]
+notes = { "rust.if.expr" = "`if` is an expression: each arm produces a value, and that value is the function's return value — no `return` needed.", "rust.operator.modulo" = "`%` is the remainder; `n % 2 == 0` is true for even numbers." }
+
+  [[blocks.line]]
+  at = 2
+  ask = "Why is there no `return` keyword, and no semicolon after the closing brace?"
+  concepts = ["rust.if.expr"]
+  notes = { "rust.if.expr" = "The `if`/`else` block is the tail expression of the function, so its value is returned." }
+
+  [[blocks.line]]
+  at = 3
+  ask = "What value does the function give back when `n` is even, and why is there no `return`?"
+  concepts = ["rust.if.expr"]

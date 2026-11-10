@@ -30,6 +30,22 @@ const EMBEDDED: &[(&str, &str)] = &[
         "rust/005-entry-api.toml",
         include_str!("../snippets/rust/005-entry-api.toml"),
     ),
+    (
+        "rust/006-lets-and-print.toml",
+        include_str!("../snippets/rust/006-lets-and-print.toml"),
+    ),
+    (
+        "rust/007-if-else.toml",
+        include_str!("../snippets/rust/007-if-else.toml"),
+    ),
+    (
+        "rust/008-struct-literal.toml",
+        include_str!("../snippets/rust/008-struct-literal.toml"),
+    ),
+    (
+        "rust/009-range-sum.toml",
+        include_str!("../snippets/rust/009-range-sum.toml"),
+    ),
 ];
 
 #[derive(Debug, Default)]
