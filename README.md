@@ -120,6 +120,17 @@ something was wrong is the moment you need to see what you were looking at:
 - `why` — the lesson: what the code actually does, in two or three sentences. It is
   required whenever the verdict is not "correct", and it is the whole answer when you said
   you did not know. Grading that only marks you down is not teaching.
+### When grading fails
+
+A reviewer that answers with broken JSON does not cost you the sitting. The reply is read
+tolerantly first — prose around it, a code fence, a trailing comma, a newline inside a
+string, or a reply cut off mid-object are all normal model behaviour, and none of them is
+worth losing six answers over. If it still cannot be read, `readcode` asks once more, and in
+the full-screen view the failure leaves your answers on screen with `r` to try again.
+
+If it keeps failing, the error names what the parser objected to and writes the reviewer's
+whole reply to `$TMPDIR/readcode-last-reply.txt`, which is the file worth reporting.
+
 - `docs` — where to read more. These come from a table keyed by concept namespace, not
   from the model, because a study tool that invents URLs is worse than one that says
   nothing; a corpus author can add their own with `docs = [{ title = "…", url = "…" }]`.
@@ -388,7 +399,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 156 tests, no network, no agent
+cargo test                        # 164 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

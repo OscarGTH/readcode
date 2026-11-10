@@ -29,6 +29,8 @@ pub enum Action {
     Grade,
     /// The review was dismissed; the answers are ready to be scored and saved.
     Finish,
+    /// Grading failed and the learner wants another go: the answers are still here.
+    Retry,
 }
 
 pub struct App<'a> {
@@ -203,6 +205,14 @@ impl<'a> App<'a> {
         self.scroll = 0;
     }
 
+    /// Grading failed; keep the answers and try again.
+    pub fn retry(&mut self) {
+        self.error = None;
+        self.grade = None;
+        self.phase = Phase::Grading;
+        self.scroll = 0;
+    }
+
     pub fn scroll_by(&mut self, delta: isize) {
         let next = self.scroll as isize + delta;
         self.scroll = next.max(0) as usize;
@@ -287,6 +297,9 @@ impl<'a> App<'a> {
 
     fn on_key_review(&mut self, key: Key) -> Action {
         match key {
+            // Only meaningful after a failure, and then it matters: the sitting's
+            // answers are the only thing of value here, and they are not lost yet.
+            Key::Char('r') if self.error.is_some() => Action::Retry,
             Key::Char('q') | Key::Escape | Key::CtrlC => Action::Abort,
             Key::Enter => Action::Finish,
             Key::Char('j') | Key::Down => {
@@ -462,6 +475,26 @@ mod tests {
         let snippet = corpus.find("005").unwrap().clone();
         let mut app = app(&snippet);
         assert_eq!(app.on_key(Key::Escape), Action::Abort);
+    }
+
+    #[test]
+    fn retry_is_only_offered_after_a_failure_and_keeps_the_answers() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("005").unwrap().clone();
+        let mut app = app(&snippet);
+        type_text(&mut app, "an answer worth keeping");
+        app.on_key(Key::Enter);
+
+        // A good review: `r` is not a retry key.
+        app.phase = Phase::Review;
+        assert_eq!(app.on_key(Key::Char('r')), Action::None);
+
+        app.fail("the reviewer's JSON could not be parsed".into());
+        assert_eq!(app.on_key(Key::Char('r')), Action::Retry);
+        app.retry();
+        assert_eq!(app.phase, Phase::Grading);
+        assert!(app.error.is_none());
+        assert_eq!(app.answers[0], "an answer worth keeping");
     }
 
     #[test]

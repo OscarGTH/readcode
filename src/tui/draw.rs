@@ -348,12 +348,26 @@ fn cursor_text(app: &App) -> Text<'static> {
 /// the moment they most want to compare is the moment they get the answer.
 fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
     if let Some(error) = &app.error {
-        frame.render_widget(
-            Paragraph::new(format!(" grading failed · {error}"))
-                .wrap(Wrap { trim: false })
-                .style(Style::default().fg(Color::Red)),
-            area,
-        );
+        let text = Text::from(vec![
+            Line::from(Span::styled(
+                " grading failed",
+                Theme::verdict(Verdict::Wrong),
+            )),
+            Line::raw(""),
+            Line::from(Span::styled(
+                format!(" {error}"),
+                Style::default().fg(Color::Gray),
+            )),
+            Line::raw(""),
+            Line::from(vec![
+                Span::styled(" your answers are still here · ", Theme::dim()),
+                Span::styled("r", Theme::note()),
+                Span::styled(" tries the reviewer again · ", Theme::dim()),
+                Span::styled("Enter", Theme::note()),
+                Span::styled(" gives up", Theme::dim()),
+            ]),
+        ]);
+        frame.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
         return;
     }
     let Some(grade) = &app.grade else {
@@ -604,6 +618,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
             " Enter next · Ctrl-J newline · Ctrl-B back · Enter on empty skips · Esc quits"
         }
         Phase::Grading => " grading…",
+        Phase::Review if app.error.is_some() => " r retries grading · Enter gives up",
         Phase::Review => " j/k scroll · Enter finishes · Esc discards",
     };
     frame.render_widget(
@@ -927,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_grade_says_so_instead_of_showing_an_empty_review() {
+    fn a_failed_grade_says_so_and_offers_another_go() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("005").unwrap();
         let mut app = app_with_answer(snippet);
@@ -935,6 +950,9 @@ mod tests {
         let screen = screen(&app, 90, 20);
         assert!(screen.contains("grading failed"), "{screen}");
         assert!(screen.contains("connection refused"), "{screen}");
+        // The point of the retry: the answers were never thrown away.
+        assert!(screen.contains("your answers are still here"), "{screen}");
+        assert!(screen.contains("tries the reviewer again"), "{screen}");
     }
 
     #[test]

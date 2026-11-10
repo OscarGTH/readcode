@@ -322,9 +322,22 @@ pub fn run(
 
     writeln!(term.out)?;
     writeln!(term.out, "{}", style.dim("grading…"))?;
-    let grade = reviewer
-        .grade(snippet, &prompts, &annotations)
-        .context("grading failed; nothing was saved")?;
+    let grade = match reviewer.grade(snippet, &prompts, &annotations) {
+        Ok(grade) => grade,
+        // A reply that would not parse is usually the agent's formatting, not the
+        // learner's answers: ask once more rather than lose the sitting.
+        Err(error) if is_parse_failure(&error) => {
+            writeln!(
+                term.out,
+                "{}",
+                style.dim("the reviewer's reply did not parse — asking once more")
+            )?;
+            reviewer
+                .grade(snippet, &prompts, &annotations)
+                .context("grading failed; nothing was saved")?
+        }
+        Err(error) => return Err(error).context("grading failed; nothing was saved"),
+    };
 
     writeln!(term.out)?;
     ui::print_grade(term.out, style, &prompts, &grade)?;
@@ -367,6 +380,14 @@ pub fn run_tui(
                 Action::Abort => break Action::Abort,
                 Action::Finish => break Action::Finish,
                 Action::None => {}
+                Action::Retry => {
+                    app.retry();
+                    guard.terminal().draw(|frame| tui::draw(frame, &app))?;
+                    match reviewer.grade(snippet, &app.prompts, &app.annotations()) {
+                        Ok(grade) => app.finish(grade),
+                        Err(error) => app.fail(format!("{error:#}")),
+                    }
+                }
                 Action::Grade => {
                     // Drawn before the call, because grading blocks for as long
                     // as the agent takes.
@@ -405,6 +426,13 @@ pub fn run_tui(
         concepts_touched,
         due_now,
     }))
+}
+
+/// Whether a grading error was the reviewer failing to produce parseable JSON,
+/// rather than the request never reaching it. Those are worth one more try.
+pub fn is_parse_failure(error: &anyhow::Error) -> bool {
+    let text = format!("{error:#}").to_lowercase();
+    text.contains("json") || text.contains("did not return a grade")
 }
 
 /// Folds a grade into progress and reports what changed. Shared by both views,
@@ -527,6 +555,31 @@ mod tests {
     use super::*;
     use crate::review::{Grade, PromptGrade};
     use crate::srs::Verdict;
+
+    /// Fails the first call with a parse error, then behaves. A reply that will
+    /// not parse is the agent's formatting, not the learner's answers, so the
+    /// sitting should survive one bad reply.
+    struct FlakyReviewer(std::cell::Cell<u32>);
+
+    impl Reviewer for FlakyReviewer {
+        fn name(&self) -> String {
+            "flaky".to_string()
+        }
+
+        fn grade(
+            &self,
+            snippet: &Snippet,
+            prompts: &[crate::snippet::Prompt],
+            annotations: &[Annotation],
+        ) -> Result<Grade> {
+            let calls = self.0.get() + 1;
+            self.0.set(calls);
+            if calls == 1 {
+                anyhow::bail!("the reviewer's JSON could not be parsed (expected value)");
+            }
+            EchoReviewer.grade(snippet, prompts, annotations)
+        }
+    }
 
     /// Grades like a cooperative model: anything the learner actually explains
     /// is correct, "I don't know" and blanks are unknown. That is all these
@@ -745,6 +798,38 @@ mod tests {
         let advice = level_advice(&corpus, &progress).expect("advice once the rung is solid");
         assert!(advice.contains("cleared level 1"), "{advice}");
         assert!(advice.contains("readcode level 2"), "{advice}");
+    }
+
+    #[test]
+    fn one_unparseable_reply_does_not_lose_the_sitting() {
+        let corpus = corpus();
+        let snippet = corpus.find("002").unwrap();
+        let mut progress = Progress::default();
+        let stdin = answers(snippet, Asks::Blocks, "an explanation");
+        let mut input = std::io::Cursor::new(stdin);
+        let mut out: Vec<u8> = Vec::new();
+        let mut term = Terminal {
+            input: &mut input,
+            out: &mut out,
+            style: Style::new(false),
+        };
+        let reviewer = FlakyReviewer(std::cell::Cell::new(0));
+
+        let outcome = run(
+            snippet,
+            Asks::Blocks,
+            &reviewer,
+            &mut progress,
+            2_000,
+            &mut term,
+        )
+        .unwrap();
+
+        assert!(outcome.is_some(), "the sitting was lost");
+        assert_eq!(reviewer.0.get(), 2, "it should have asked twice");
+        let screen = String::from_utf8_lossy(&out).to_string();
+        assert!(screen.contains("did not parse"), "{screen}");
+        assert!(screen.contains("saved —"), "{screen}");
     }
 
     #[test]
