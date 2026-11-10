@@ -19,6 +19,9 @@ pulls in nothing you keep afterwards:
 brew install OscarGTH/tap/readcode
 ```
 
+On Homebrew 6 or later you may be asked to trust a third-party tap first:
+`brew trust OscarGTH/tap`.
+
 Anywhere with a Rust toolchain:
 
 ```sh
