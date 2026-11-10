@@ -1,20 +1,32 @@
-//! One sitting: show a snippet, collect an annotation per block, grade it, and
-//! fold the verdicts back into mastery. I/O is injected so the whole loop runs
-//! in tests without a terminal.
+//! One sitting: show a snippet, collect an annotation per prompt (a block or a
+//! single line), grade it, and fold the verdicts back into mastery. I/O is
+//! injected so the whole loop runs in tests without a terminal.
 
 use std::io::{BufRead, Write};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::corpus::Corpus;
 use crate::review::{Annotation, Grade, Reviewer};
-use crate::snippet::Snippet;
+use crate::snippet::{Asks, Snippet};
 use crate::srs::ConceptState;
 use crate::store::{Event, Progress};
 use crate::ui::{self, Style};
 
+const HELP: &str = "explain in your own words · `.` on its own line finishes · `:unknown` if you have no idea · `:quit` stops";
+
+/// Where a sitting reads and writes, bundled so a session takes one terminal
+/// instead of three separate handles.
+pub struct Terminal<'a> {
+    pub input: &'a mut dyn BufRead,
+    pub out: &'a mut dyn Write,
+    pub style: Style,
+}
+
 pub struct Outcome {
     pub grade: Grade,
+    /// The granularity that was actually used, after `auto` resolved.
+    pub mode: Asks,
     /// Distinct concepts the grade touched.
     pub concepts_touched: usize,
     /// Concepts due for review right now, after this sitting.
@@ -77,67 +89,106 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
     candidates.last().map(|(_, snippet)| *snippet)
 }
 
+/// Which granularity to use for a snippet, given what came before.
+/// A repeat visit alternates: blocks test comprehension, lines test detail, and
+/// the same code is worth meeting both ways.
+pub fn choose_mode(snippet: &Snippet, progress: &Progress) -> Asks {
+    let preferred = snippet.resolve_mode(snippet.asks);
+    match progress.last_mode(&snippet.id) {
+        Some(previous) => previous.flipped(),
+        None => preferred,
+    }
+}
+
 pub fn run(
     snippet: &Snippet,
+    mode: Asks,
     reviewer: &dyn Reviewer,
     progress: &mut Progress,
     now: u64,
-    style: Style,
-    input: &mut dyn BufRead,
-    out: &mut dyn Write,
+    term: &mut Terminal<'_>,
 ) -> Result<Option<Outcome>> {
-    ui::print_snippet(out, style, snippet)?;
-    writeln!(out)?;
+    let style = term.style;
+    let mode = snippet.resolve_mode(mode);
+    let prompts = snippet.prompts(mode);
+    if prompts.is_empty() {
+        bail!("snippet `{}` produced no prompts", snippet.id);
+    }
+
+    ui::print_header(term.out, style, snippet)?;
+    writeln!(term.out)?;
     writeln!(
-        out,
+        term.out,
         "{}",
-        style.dim(&format!("reviewer: {}", reviewer.name()))
-    )?;
-    writeln!(out)?;
-    writeln!(
-        out,
-        "{}",
-        style.dim("explain each block in your own words · `.` on its own line finishes · `:unknown` if you have no idea · `:quit` stops")
+        style.dim(&format!(
+            "asked {} · {} prompt{} · reviewer: {}",
+            if mode == Asks::Lines {
+                "line by line"
+            } else {
+                "block by block"
+            },
+            prompts.len(),
+            if prompts.len() == 1 { "" } else { "s" },
+            reviewer.name()
+        ))
     )?;
 
-    let mut annotations = Vec::with_capacity(snippet.blocks.len());
-    for (index, block) in snippet.blocks.iter().enumerate() {
-        let (start, end) = (block.lines[0], block.lines[1]);
-        writeln!(out)?;
-        writeln!(
-            out,
-            "{}",
-            style.bold(&format!("block {} · lines {start}-{end}", index + 1))
-        )?;
-        writeln!(out, "{}", block.ask)?;
-        match read_annotation(input, out, style)? {
+    let line_mode = mode == Asks::Lines;
+    if line_mode {
+        // In line mode the whole snippet is shown once: you need the
+        // surrounding code to explain a single line.
+        ui::print_code(term.out, style, snippet)?;
+    }
+
+    writeln!(term.out)?;
+    writeln!(term.out, "{}", style.dim(HELP))?;
+
+    let mut annotations = Vec::with_capacity(prompts.len());
+    for (index, prompt) in prompts.iter().enumerate() {
+        writeln!(term.out)?;
+        if line_mode {
+            ui::print_line_prompt(
+                term.out,
+                style,
+                ui::gutter_width(snippet),
+                prompt.start,
+                prompt,
+            )?;
+        } else {
+            ui::print_block(term.out, style, snippet, prompt.block)?;
+        }
+        match read_annotation(term)? {
             Some(text) => annotations.push(Annotation::new(index, text)),
             None => {
-                writeln!(out, "{}", style.dim("stopped — this snippet was not saved"))?;
+                writeln!(
+                    term.out,
+                    "{}",
+                    style.dim("stopped — this snippet was not saved")
+                )?;
                 return Ok(None);
             }
         }
     }
 
-    writeln!(out)?;
-    writeln!(out, "{}", style.dim("grading…"))?;
+    writeln!(term.out)?;
+    writeln!(term.out, "{}", style.dim("grading…"))?;
     let grade = reviewer
-        .grade(snippet, &annotations)
+        .grade(snippet, &prompts, &annotations)
         .context("grading failed; nothing was saved")?;
 
-    writeln!(out)?;
-    ui::print_grade(out, style, snippet, &grade)?;
+    writeln!(term.out)?;
+    ui::print_grade(term.out, style, &prompts, &grade)?;
 
     let verdicts = grade.concept_verdicts();
     for (concept, verdict) in &verdicts {
         progress.concept_mut(concept).apply(*verdict, now);
     }
-    for block_grade in &grade.blocks {
+    for graded in &grade.prompts {
         progress.record(Event {
             at: now,
             snippet: snippet.id.clone(),
-            block: block_grade.block,
-            verdict: block_grade.verdict,
+            prompt: graded.prompt,
+            verdict: graded.verdict,
         });
     }
 
@@ -147,6 +198,7 @@ pub fn run(
     progress.updated_at = now;
     progress.sessions += 1;
     progress.last_snippet = Some(snippet.id.clone());
+    progress.set_last_mode(&snippet.id, mode);
     if !progress.seen(&snippet.id) {
         progress.seen_snippets.push(snippet.id.clone());
     }
@@ -157,19 +209,22 @@ pub fn run(
         .filter(|state| state.due_at != 0 && state.due_at <= now)
         .count();
 
-    writeln!(out)?;
+    writeln!(term.out)?;
     writeln!(
-        out,
+        term.out,
         "{}",
         style.dim(&format!(
-            "saved — {} concept{} updated · {due_now} due for review now · `readcode status` for mastery",
+            "saved — {} concept{} updated · {} prompt{} graded · {due_now} due for review now · `readcode status` for mastery",
             verdicts.len(),
-            if verdicts.len() == 1 { "" } else { "s" }
+            if verdicts.len() == 1 { "" } else { "s" },
+            grade.prompts.len(),
+            if grade.prompts.len() == 1 { "" } else { "s" },
         ))
     )?;
 
     Ok(Some(Outcome {
         grade,
+        mode,
         concepts_touched: verdicts.len(),
         due_now,
     }))
@@ -177,18 +232,14 @@ pub fn run(
 
 /// Reads a multi-line annotation until a line that is exactly `.`.
 /// Returns `None` when the learner asked to stop.
-fn read_annotation(
-    input: &mut dyn BufRead,
-    out: &mut dyn Write,
-    style: Style,
-) -> Result<Option<String>> {
+fn read_annotation(term: &mut Terminal<'_>) -> Result<Option<String>> {
     let mut buffer = String::new();
     loop {
-        write!(out, "{} ", style.cyan(">"))?;
-        out.flush()?;
+        write!(term.out, "{} ", term.style.cyan(">"))?;
+        term.out.flush()?;
 
         let mut line = String::new();
-        let read = input.read_line(&mut line)?;
+        let read = term.input.read_line(&mut line)?;
         if read == 0 {
             // EOF (piped input ended): take what we have.
             return Ok(Some(buffer));
@@ -215,8 +266,8 @@ fn read_annotation(
     }
 }
 
-/// Small xorshift so snippet choice varies between runs but is reproducible from
-/// a seed, which keeps `pick` testable.
+/// splitmix64, so a small seed (an early epoch second, a test counter) still
+/// produces a well-mixed stream — which is what keeps `pick` testable.
 struct Rng(u64);
 
 impl Rng {
@@ -224,8 +275,6 @@ impl Rng {
         Self(seed)
     }
 
-    /// splitmix64: a small seed (an early epoch second, a test counter) still
-    /// produces a well-mixed stream, which a bare xorshift does not.
     fn next_u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
@@ -248,85 +297,118 @@ mod tests {
         Corpus::builtin().unwrap()
     }
 
-    #[test]
-    fn a_full_sitting_saves_progress_and_schedules_concepts() {
-        let corpus = corpus();
-        let snippet = corpus.find("002").unwrap();
-        let mut progress = Progress::default();
+    /// Runs a sitting over piped input; returns the outcome and the screen.
+    fn sitting(
+        snippet: &Snippet,
+        mode: Asks,
+        progress: &mut Progress,
+        now: u64,
+        stdin: String,
+    ) -> (Result<Option<Outcome>>, String) {
+        let mut input = std::io::Cursor::new(stdin);
+        let mut out: Vec<u8> = Vec::new();
+        let mut term = Terminal {
+            input: &mut input,
+            out: &mut out,
+            style: Style::new(false),
+        };
+        let outcome = run(snippet, mode, &LocalReviewer, progress, now, &mut term);
+        (outcome, String::from_utf8_lossy(&out).to_string())
+    }
 
-        // Answer every block with the rubric's own words, then `.`.
+    /// Annotations built from the rubric itself: a reviewer must credit them.
+    fn rubric_stdin(snippet: &Snippet, mode: Asks) -> String {
         let mut stdin = String::new();
-        for block in &snippet.blocks {
-            for expect in &block.expects {
+        for prompt in snippet.prompts(mode) {
+            for expect in &prompt.expects {
                 stdin.push_str(&expect.keywords.join(", "));
                 stdin.push('\n');
             }
             stdin.push_str(".\n");
         }
+        stdin
+    }
 
-        let mut input = std::io::Cursor::new(stdin);
-        let mut out: Vec<u8> = Vec::new();
-        let outcome = run(
-            snippet,
-            &LocalReviewer,
-            &mut progress,
-            1_000_000,
-            Style::new(false),
-            &mut input,
-            &mut out,
-        )
-        .unwrap()
-        .expect("a finished sitting");
+    #[test]
+    fn a_full_sitting_saves_progress_and_schedules_concepts() {
+        let corpus = corpus();
+        let snippet = corpus.find("002").unwrap();
+        let prompts = snippet.prompts(Asks::Blocks);
+        let mut progress = Progress::default();
+        let stdin = rubric_stdin(snippet, Asks::Blocks);
+
+        let (result, _) = sitting(snippet, Asks::Blocks, &mut progress, 1_000_000, stdin);
+        let outcome = result.unwrap().expect("a finished sitting");
 
         assert_eq!(progress.sessions, 1);
         assert!(!progress.concepts.is_empty());
-        assert_eq!(outcome.grade.blocks.len(), snippet.blocks.len());
+        assert_eq!(outcome.grade.prompts.len(), prompts.len());
+        assert_eq!(outcome.mode, Asks::Blocks);
         assert!(progress.seen(&snippet.id));
         assert_eq!(progress.last_snippet.as_deref(), Some(snippet.id.as_str()));
+        assert_eq!(progress.last_mode(&snippet.id), Some(Asks::Blocks));
         // Correct answers push every concept a day out, so nothing is due now.
         assert!(
-            progress.concepts.values().all(|c| c.due_at > 1_000_000),
+            progress
+                .concepts
+                .values()
+                .all(|concept| concept.due_at > 1_000_000),
             "{:?}",
             progress
                 .concepts
                 .values()
-                .map(|c| c.due_at)
+                .map(|concept| concept.due_at)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn line_mode_asks_more_questions_and_shows_the_whole_snippet() {
+        let corpus = corpus();
+        let snippet = corpus.find("005").unwrap();
+        let block_prompts = snippet.prompts(Asks::Blocks);
+        let line_prompts = snippet.prompts(Asks::Lines);
+        assert!(
+            line_prompts.len() > block_prompts.len(),
+            "line mode should ask about more than {} things",
+            block_prompts.len()
+        );
+
+        let mut progress = Progress::default();
+        let stdin = rubric_stdin(snippet, Asks::Lines);
+        let (result, screen) = sitting(snippet, Asks::Lines, &mut progress, 2_000_000, stdin);
+        let outcome = result.unwrap().expect("a finished sitting");
+
+        assert_eq!(outcome.mode, Asks::Lines);
+        assert_eq!(progress.events.len(), line_prompts.len());
+        assert_eq!(progress.last_mode(&snippet.id), Some(Asks::Lines));
+        // The whole snippet is shown once, then each significant line is asked.
+        assert!(screen.contains("asked line by line"), "{screen}");
+        assert!(screen.contains("── block 4 · lines 6-7"), "{screen}");
+        assert!(screen.contains("┌ line 6 · "), "{screen}");
     }
 
     #[test]
     fn unknown_answers_come_back_within_the_sitting() {
         let corpus = corpus();
         let snippet = corpus.find("002").unwrap();
+        let prompts = snippet.prompts(Asks::Blocks);
         let mut progress = Progress::default();
-        let mut stdin = String::new();
-        for _ in &snippet.blocks {
-            stdin.push_str(":unknown\n");
-        }
-        let mut input = std::io::Cursor::new(stdin);
-        let mut out: Vec<u8> = Vec::new();
-        run(
-            snippet,
-            &LocalReviewer,
-            &mut progress,
-            1_000_000,
-            Style::new(false),
-            &mut input,
-            &mut out,
-        )
-        .unwrap();
+        let stdin = ":unknown\n".repeat(prompts.len());
+        sitting(snippet, Asks::Blocks, &mut progress, 1_000_000, stdin)
+            .0
+            .unwrap();
 
         assert!(
             progress
                 .concepts
                 .values()
-                .all(|c| c.due_at == 1_000_000 + 900),
+                .all(|concept| concept.due_at == 1_000_000 + 900),
             "{:?}",
             progress
                 .concepts
                 .values()
-                .map(|c| c.due_at)
+                .map(|concept| concept.due_at)
                 .collect::<Vec<_>>()
         );
     }
@@ -336,43 +418,64 @@ mod tests {
         let corpus = corpus();
         let snippet = corpus.find("001").unwrap();
         let mut progress = Progress::default();
-        let mut input = std::io::Cursor::new(":quit\n");
-        let mut out: Vec<u8> = Vec::new();
-        let outcome = run(
+        let (result, _) = sitting(
             snippet,
-            &LocalReviewer,
+            Asks::Blocks,
             &mut progress,
             1_000_000,
-            Style::new(false),
-            &mut input,
-            &mut out,
-        )
-        .unwrap();
-        assert!(outcome.is_none());
+            ":quit\n".to_string(),
+        );
+        assert!(result.unwrap().is_none());
         assert_eq!(progress.sessions, 0);
         assert!(progress.concepts.is_empty());
     }
 
     #[test]
     fn multiline_annotations_keep_their_lines() {
-        let style = Style::new(false);
-        let mut out: Vec<u8> = Vec::new();
         let mut input = std::io::Cursor::new("first line\nsecond line\n.\n");
-        let text = read_annotation(&mut input, &mut out, style)
-            .unwrap()
-            .unwrap();
+        let mut out: Vec<u8> = Vec::new();
+        let mut term = Terminal {
+            input: &mut input,
+            out: &mut out,
+            style: Style::new(false),
+        };
+        let text = read_annotation(&mut term).unwrap().unwrap();
         assert_eq!(text, "first line\nsecond line\n");
     }
 
     #[test]
     fn eof_ends_the_annotation_instead_of_looping() {
-        let style = Style::new(false);
-        let mut out: Vec<u8> = Vec::new();
         let mut input = std::io::Cursor::new("only line\n");
-        let text = read_annotation(&mut input, &mut out, style)
-            .unwrap()
-            .unwrap();
+        let mut out: Vec<u8> = Vec::new();
+        let mut term = Terminal {
+            input: &mut input,
+            out: &mut out,
+            style: Style::new(false),
+        };
+        let text = read_annotation(&mut term).unwrap().unwrap();
         assert_eq!(text, "only line\n");
+    }
+
+    #[test]
+    fn choose_mode_alternates_on_a_repeat_visit() {
+        let corpus = corpus();
+        let snippet = corpus.find("001").unwrap();
+        let mut progress = Progress::default();
+        // First visit: the mode the corpus is authored for.
+        assert_eq!(choose_mode(snippet, &progress), Asks::Blocks);
+        progress.set_last_mode(&snippet.id, Asks::Blocks);
+        // Second visit: the other granularity.
+        assert_eq!(choose_mode(snippet, &progress), Asks::Lines);
+        progress.set_last_mode(&snippet.id, Asks::Lines);
+        assert_eq!(choose_mode(snippet, &progress), Asks::Blocks);
+    }
+
+    #[test]
+    fn choose_mode_prefers_lines_for_a_line_authored_snippet() {
+        let corpus = corpus();
+        let snippet = corpus.find("005").unwrap();
+        let progress = Progress::default();
+        assert_eq!(choose_mode(snippet, &progress), Asks::Lines);
     }
 
     #[test]
@@ -390,7 +493,7 @@ mod tests {
     fn pick_prefers_the_weaker_concept() {
         let corpus = corpus();
         let mut progress = Progress::default();
-        // Make every concept solid except one that lives in rust-003.
+        // Make every concept solid except the ones in rust-003.
         for snippet in corpus.snippets() {
             for concept in snippet.concepts() {
                 let state = progress.concept_mut(&concept);
@@ -415,5 +518,27 @@ mod tests {
             }
         }
         assert!(hits > 20, "weak snippet was picked {hits}/40 times");
+    }
+
+    #[test]
+    fn a_line_sitting_schedules_every_concept_like_a_block_sitting() {
+        let corpus = corpus();
+        let snippet = corpus.find("005").unwrap();
+        let prompts = snippet.prompts(Asks::Lines);
+        let mut progress = Progress::default();
+        let stdin = ":unknown\n".repeat(prompts.len());
+        sitting(snippet, Asks::Lines, &mut progress, 3_000_000, stdin)
+            .0
+            .unwrap();
+
+        assert!(!progress.concepts.is_empty());
+        assert!(
+            progress
+                .concepts
+                .values()
+                .all(|concept| concept.due_at == 3_000_000 + 900),
+            "every concept in the snippet should be scheduled inside the sitting"
+        );
+        assert_eq!(progress.last_mode(&snippet.id), Some(Asks::Lines));
     }
 }

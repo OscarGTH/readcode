@@ -26,6 +26,10 @@ const EMBEDDED: &[(&str, &str)] = &[
         "rust/004-struct-impl.toml",
         include_str!("../snippets/rust/004-struct-impl.toml"),
     ),
+    (
+        "rust/005-entry-api.toml",
+        include_str!("../snippets/rust/005-entry-api.toml"),
+    ),
 ];
 
 #[derive(Debug, Default)]

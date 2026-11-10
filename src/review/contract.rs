@@ -5,28 +5,29 @@
 //! prompt of a session — see [`prime`].
 
 use crate::review::Annotation;
-use crate::snippet::Snippet;
+use crate::snippet::{Prompt, Snippet};
 
-pub const CONTRACT: &str = r#"You are the reviewer inside readcode, a tool that teaches a programming language by having the learner annotate real code, block by block, and then grading what they wrote.
+pub const CONTRACT: &str = r#"You are the reviewer inside readcode, a tool that teaches a programming language by having the learner explain real code and then grading what they wrote.
 
 Rules:
-- Grade the learner's annotation for each block against that block's expected concepts. Do not rewrite the code, do not give a tutorial, do not ask questions.
+- The learner is given PROMPTS. A prompt is either a block of lines or a single line. Grade the learner's annotation for each prompt against that prompt's expected concepts. Do not rewrite the code, do not give a tutorial, do not ask questions.
 - Mark a concept "correct" only if the annotation actually says it — in its own words, with the right meaning. Restating the code is not explaining it.
 - "partial" means the idea is there but incomplete or imprecise. "wrong" means the annotation says something false or explains a different thing. "unknown" means the learner said they do not know, or left it blank.
-- Keep feedback to one or two sentences per block. Name the misconception, not the syntax.
+- A short, accurate answer for a single line is complete. Do not ask for more detail than the line needs.
+- Keep feedback to one or two sentences per prompt. Name the misconception, not the syntax.
 - Reply with TEXT ONLY. Do not call tools, do not create or edit files, do not run commands, do not request permissions.
 - Reply with a single JSON object and nothing else: no prose before or after it, no markdown code fences.
 
 The JSON object has exactly this shape:
-{"blocks":[{"block":1,"verdict":"correct|partial|wrong|unknown","concepts":{"<concept id>":"correct|partial|wrong|unknown"},"missing":["short phrase"],"feedback":"one or two sentences"}],"summary":"one sentence for the whole snippet"}
+{"prompts":[{"prompt":1,"verdict":"correct|partial|wrong|unknown","concepts":{"<concept id>":"correct|partial|wrong|unknown"},"missing":["short phrase"],"feedback":"one or two sentences"}],"summary":"one sentence for the whole snippet"}
 
-Emit one entry per block, in block order, using the block numbers given to you. `concepts` must use the exact concept ids given. `missing` lists what the learner failed to notice, as short phrases; leave it empty when nothing is missing.
+Emit one entry per prompt, in prompt order, using the prompt numbers given to you. `concepts` must use the exact concept ids given. `missing` lists what the learner failed to notice, as short phrases; leave it empty when nothing is missing.
 "#;
 
-/// The grading request for one snippet. Everything a reviewer needs is here:
-/// the numbered code, the blocks with their expected concepts, and what the
+/// The grading request for one sitting. Everything a reviewer needs is here:
+/// the numbered code, the prompts with their expected concepts, and what the
 /// learner wrote.
-pub fn task(snippet: &Snippet, annotations: &[Annotation]) -> String {
+pub fn task(snippet: &Snippet, prompts: &[Prompt], annotations: &[Annotation]) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "SNIPPET {} ({}): {}\n",
@@ -41,16 +42,21 @@ pub fn task(snippet: &Snippet, annotations: &[Annotation]) -> String {
         out.push_str(&format!("{:>3} | {}\n", index + 1, line));
     }
 
-    out.push_str("\nBLOCKS, AND THE CONCEPTS EACH ONE MUST BE EXPLAINED WITH:\n");
-    for (index, block) in snippet.blocks.iter().enumerate() {
-        let (start, end) = (block.lines[0], block.lines[1]);
+    out.push_str("\nPROMPTS, AND THE CONCEPTS EACH ONE MUST BE EXPLAINED WITH:\n");
+    for (index, prompt) in prompts.iter().enumerate() {
         out.push_str(&format!(
-            "\nblock {} (lines {start}-{end})\n  question: {}\n",
+            "\nprompt {} ({}, block {})\n  question: {}\n",
             index + 1,
-            block.ask
+            prompt.span_label(),
+            prompt.block + 1,
+            prompt.ask
         ));
-        for concept in &block.concepts {
-            match block.expects.iter().find(|e| &e.concept == concept) {
+        for concept in &prompt.concepts {
+            match prompt
+                .expects
+                .iter()
+                .find(|expect| &expect.concept == concept)
+            {
                 Some(expect) if !expect.note.is_empty() => {
                     out.push_str(&format!("  - {concept}: {}\n", expect.note))
                 }
@@ -67,11 +73,11 @@ pub fn task(snippet: &Snippet, annotations: &[Annotation]) -> String {
         } else {
             text
         };
-        out.push_str(&format!("\n[block {}]\n{shown}\n", annotation.block + 1));
+        out.push_str(&format!("\n[prompt {}]\n{shown}\n", annotation.prompt + 1));
     }
 
     out.push_str(
-        "\nGrade every block above. Be strict about meaning and generous about wording: a correct idea in clumsy words is \"correct\".",
+        "\nGrade every prompt above. Be strict about meaning and generous about wording: a correct idea in clumsy words is \"correct\", and a line that is fully explained in one clause is not incomplete.",
     );
     out
 }
@@ -85,15 +91,13 @@ pub fn prime(task: &str) -> String {
 mod tests {
     use super::*;
     use crate::corpus::Corpus;
-
-    fn annotation(block: usize, text: &str) -> Annotation {
-        Annotation::new(block, text)
-    }
+    use crate::snippet::Asks;
 
     #[test]
     fn the_contract_states_the_shape_it_expects() {
         for needle in [
-            "\"blocks\"",
+            "\"prompts\"",
+            "\"prompt\"",
             "\"verdict\"",
             "\"concepts\"",
             "\"missing\"",
@@ -106,36 +110,53 @@ mod tests {
     }
 
     #[test]
-    fn the_task_carries_code_blocks_and_annotations() {
+    fn the_task_carries_code_prompts_and_annotations() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("001").unwrap();
-        let notes: Vec<Annotation> = snippet
-            .blocks
+        let prompts = snippet.prompts(Asks::Blocks);
+        let notes: Vec<Annotation> = prompts
             .iter()
             .enumerate()
-            .map(|(i, _)| annotation(i, &format!("annotation number {i}")))
+            .map(|(index, _)| Annotation::new(index, format!("annotation number {index}")))
             .collect();
-        let text = task(snippet, &notes);
+        let text = task(snippet, &prompts, &notes);
 
         assert!(text.contains("1 | fn shout(mut text: String) -> String {"));
         for concept in snippet.concepts() {
             assert!(text.contains(&concept), "task is missing concept {concept}");
         }
-        for (i, _) in snippet.blocks.iter().enumerate() {
-            assert!(text.contains(&format!("annotation number {i}")));
-            assert!(text.contains(&format!("block {} (lines ", i + 1)));
+        for (index, prompt) in prompts.iter().enumerate() {
+            assert!(text.contains(&format!("annotation number {index}")));
+            assert!(text.contains(&format!("prompt {} (", index + 1)));
+            assert!(text.contains(&prompt.ask));
         }
+    }
+
+    #[test]
+    fn line_mode_prompts_are_labelled_by_line() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("005").unwrap();
+        let prompts = snippet.prompts(Asks::Lines);
+        let notes: Vec<Annotation> = prompts
+            .iter()
+            .enumerate()
+            .map(|(index, _)| Annotation::new(index, "x"))
+            .collect();
+        let text = task(snippet, &prompts, &notes);
+        assert!(text.contains("prompt 1 (line "), "{text}");
+        assert!(!text.contains("(lines 1-5, block 1)\nprompt 2 (line"));
     }
 
     #[test]
     fn blank_annotations_are_labelled_not_dropped() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("004").unwrap();
-        let notes: Vec<Annotation> = (0..snippet.blocks.len())
-            .map(|i| annotation(i, "   "))
+        let prompts = snippet.prompts(Asks::Blocks);
+        let notes: Vec<Annotation> = (0..prompts.len())
+            .map(|index| Annotation::new(index, "   "))
             .collect();
-        let text = task(snippet, &notes);
-        assert_eq!(text.matches("(left blank)").count(), snippet.blocks.len());
+        let text = task(snippet, &prompts, &notes);
+        assert_eq!(text.matches("(left blank)").count(), prompts.len());
     }
 
     #[test]

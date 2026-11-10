@@ -1,5 +1,8 @@
 //! Grading: the contract every reviewer follows, and the three implementations.
 //!
+//! A sitting is a list of [`Prompt`]s — blocks or single lines. Reviewers only
+//! ever see prompts, so line mode and block mode use the same grading path.
+//!
 //! * [`local`] — deterministic keyword rubric, always available, no model.
 //! * [`api`] — BYOK HTTP client for OpenAI- or Anthropic-compatible endpoints.
 //! * [`acp`] — hosts the user's own coding agent over the Agent Client Protocol,
@@ -15,49 +18,51 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
-use crate::snippet::Snippet;
+use crate::snippet::{Prompt, Snippet};
 use crate::srs::{Verdict, combine};
 
-/// What the learner wrote for one block.
+/// What the learner wrote for one prompt.
 #[derive(Debug, Clone)]
 pub struct Annotation {
-    /// 0-based index into `Snippet::blocks`.
-    pub block: usize,
+    /// 0-based index into the sitting's prompts.
+    pub prompt: usize,
     pub text: String,
 }
 
 impl Annotation {
-    pub fn new(block: usize, text: impl Into<String>) -> Self {
+    pub fn new(prompt: usize, text: impl Into<String>) -> Self {
         Self {
-            block,
+            prompt,
             text: text.into(),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct BlockGrade {
-    pub block: usize,
+pub struct PromptGrade {
+    pub prompt: usize,
     pub verdict: Verdict,
     pub feedback: String,
     pub missing: Vec<String>,
-    /// Per-concept verdicts, in the block's concept order.
+    /// Per-concept verdicts, in the prompt's concept order.
     pub concepts: Vec<(String, Verdict)>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Grade {
     pub reviewer: String,
-    pub blocks: Vec<BlockGrade>,
+    pub prompts: Vec<PromptGrade>,
     pub summary: String,
 }
 
 impl Grade {
-    /// One verdict per concept, folded across every block that carries it.
+    /// One verdict per concept, folded across every prompt that carries it.
+    /// Line mode grades the same concept on several lines; the worst reading
+    /// wins, which is what makes a half-understood line show up as `partial`.
     pub fn concept_verdicts(&self) -> Vec<(String, Verdict)> {
         let mut grouped: BTreeMap<&str, Vec<Verdict>> = BTreeMap::new();
-        for block in &self.blocks {
-            for (concept, verdict) in &block.concepts {
+        for prompt in &self.prompts {
+            for (concept, verdict) in &prompt.concepts {
                 grouped.entry(concept.as_str()).or_default().push(*verdict);
             }
         }
@@ -67,10 +72,10 @@ impl Grade {
             .collect()
     }
 
-    pub fn correct_blocks(&self) -> usize {
-        self.blocks
+    pub fn correct_prompts(&self) -> usize {
+        self.prompts
             .iter()
-            .filter(|b| b.verdict == Verdict::Correct)
+            .filter(|prompt| prompt.verdict == Verdict::Correct)
             .count()
     }
 }
@@ -78,21 +83,35 @@ impl Grade {
 pub trait Reviewer {
     fn name(&self) -> String;
 
-    fn grade(&self, snippet: &Snippet, annotations: &[Annotation]) -> Result<Grade>;
+    fn grade(
+        &self,
+        snippet: &Snippet,
+        prompts: &[Prompt],
+        annotations: &[Annotation],
+    ) -> Result<Grade>;
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RawGrade {
-    #[serde(default)]
-    pub blocks: Vec<RawBlock>,
+    /// `prompts` is the current key; `blocks` is accepted because models that
+    /// saw the older contract still answer with it.
+    #[serde(default, alias = "blocks")]
+    pub prompts: Vec<RawPrompt>,
     #[serde(default)]
     pub summary: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RawBlock {
-    #[serde(default, alias = "index", alias = "blockIndex", alias = "block_number")]
-    pub block: Option<usize>,
+pub struct RawPrompt {
+    #[serde(
+        default,
+        alias = "index",
+        alias = "block",
+        alias = "blockIndex",
+        alias = "block_number",
+        alias = "number"
+    )]
+    pub prompt: Option<usize>,
     #[serde(default)]
     pub verdict: String,
     #[serde(default)]
@@ -104,73 +123,73 @@ pub struct RawBlock {
 }
 
 impl Grade {
-    /// Turns whatever the model meant into one grade per snippet block. Missing
-    /// blocks become `unknown` rather than a punishment — a reviewer that forgot
-    /// a block is not evidence the learner got it wrong.
-    pub fn from_raw(snippet: &Snippet, raw: RawGrade, reviewer: &str) -> Result<Grade> {
-        if raw.blocks.is_empty() {
-            bail!("the reviewer returned no block grades");
+    /// Turns whatever the model meant into one grade per prompt. Missing
+    /// prompts become `unknown` rather than a punishment — a reviewer that
+    /// forgot a prompt is not evidence the learner got it wrong.
+    pub fn from_raw(prompts: &[Prompt], raw: RawGrade, reviewer: &str) -> Result<Grade> {
+        if raw.prompts.is_empty() {
+            bail!("the reviewer returned no prompt grades");
         }
-        let positional = raw.blocks.len() == snippet.blocks.len();
+        let positional = raw.prompts.len() == prompts.len();
 
-        let mut blocks = Vec::with_capacity(snippet.blocks.len());
-        for (index, block) in snippet.blocks.iter().enumerate() {
+        let mut graded = Vec::with_capacity(prompts.len());
+        for (index, prompt) in prompts.iter().enumerate() {
             let number = index + 1;
-            let raw_block = raw
-                .blocks
+            let raw_prompt = raw
+                .prompts
                 .iter()
-                .find(|b| b.block == Some(number))
+                .find(|candidate| candidate.prompt == Some(number))
                 .or_else(|| {
                     if positional {
-                        raw.blocks.get(index)
+                        raw.prompts.get(index)
                     } else {
                         None
                     }
                 });
 
-            let Some(raw_block) = raw_block else {
-                blocks.push(BlockGrade {
-                    block: index,
+            let Some(raw_prompt) = raw_prompt else {
+                graded.push(PromptGrade {
+                    prompt: index,
                     verdict: Verdict::Unknown,
-                    feedback: "the reviewer did not grade this block".to_string(),
+                    feedback: "the reviewer did not grade this prompt".to_string(),
                     missing: Vec::new(),
-                    concepts: block
+                    concepts: prompt
                         .concepts
                         .iter()
-                        .map(|c| (c.clone(), Verdict::Unknown))
+                        .map(|concept| (concept.clone(), Verdict::Unknown))
                         .collect(),
                 });
                 continue;
             };
 
-            let concepts: Vec<(String, Verdict)> = block
+            let concepts: Vec<(String, Verdict)> = prompt
                 .concepts
                 .iter()
                 .map(|concept| {
-                    let verdict = raw_block
+                    let verdict = raw_prompt
                         .concepts
                         .get(concept)
                         .map(|label| Verdict::from_label(label))
-                        .unwrap_or_else(|| Verdict::from_label(&raw_block.verdict));
+                        .unwrap_or_else(|| Verdict::from_label(&raw_prompt.verdict));
                     (concept.clone(), verdict)
                 })
                 .collect();
 
-            let mut verdict = Verdict::from_label(&raw_block.verdict);
-            if raw_block.verdict.trim().is_empty() {
-                let only: Vec<Verdict> = concepts.iter().map(|(_, v)| *v).collect();
+            let mut verdict = Verdict::from_label(&raw_prompt.verdict);
+            if raw_prompt.verdict.trim().is_empty() {
+                let only: Vec<Verdict> = concepts.iter().map(|(_, verdict)| *verdict).collect();
                 verdict = combine(&only);
             }
 
-            blocks.push(BlockGrade {
-                block: index,
+            graded.push(PromptGrade {
+                prompt: index,
                 verdict,
-                feedback: raw_block.feedback.trim().to_string(),
-                missing: raw_block
+                feedback: raw_prompt.feedback.trim().to_string(),
+                missing: raw_prompt
                     .missing
                     .iter()
-                    .map(|m| m.trim().to_string())
-                    .filter(|m| !m.is_empty())
+                    .map(|item| item.trim().to_string())
+                    .filter(|item| !item.is_empty())
                     .collect(),
                 concepts,
             });
@@ -178,7 +197,7 @@ impl Grade {
 
         Ok(Grade {
             reviewer: reviewer.to_string(),
-            blocks,
+            prompts: graded,
             summary: raw.summary.trim().to_string(),
         })
     }
@@ -221,7 +240,7 @@ pub fn truncate(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::snippet::Snippet;
+    use crate::snippet::{Asks, Snippet};
 
     const SNIPPET: &str = r#"
 id = "t-1"
@@ -229,17 +248,12 @@ language = "rust"
 title = "test"
 code = '''
 let a = 1;
-let b = 2;
+}
 '''
 
 [[blocks]]
-lines = [1, 1]
+lines = [1, 2]
 ask = "a?"
-concepts = ["rust.binding"]
-
-[[blocks]]
-lines = [2, 2]
-ask = "b?"
 concepts = ["rust.binding"]
 "#;
 
@@ -247,10 +261,18 @@ concepts = ["rust.binding"]
         Snippet::parse(SNIPPET).unwrap()
     }
 
+    fn prompts(mode: Asks) -> Vec<Prompt> {
+        snippet().prompts(mode)
+    }
+
+    fn grade(prompts: &[Prompt], json: &str) -> Grade {
+        Grade::from_raw(prompts, parse_json_object(json).unwrap(), "test").unwrap()
+    }
+
     #[test]
     fn extracts_json_from_fences_and_prose() {
         let text =
-            "Sure! Here you go:\n```json\n{\"blocks\":[],\"summary\":\"ok\"}\n```\nHope it helps.";
+            "Sure! Here you go:\n```json\n{\"prompts\":[],\"summary\":\"ok\"}\n```\nHope it helps.";
         let raw = parse_json_object(text).unwrap();
         assert_eq!(raw.summary, "ok");
     }
@@ -261,48 +283,123 @@ concepts = ["rust.binding"]
     }
 
     #[test]
-    fn maps_blocks_by_number() {
-        let raw = parse_json_object(
-            r#"{"blocks":[
-                {"block":2,"verdict":"wrong","concepts":{"rust.binding":"wrong"},"feedback":"no","missing":["x"]},
-                {"block":1,"verdict":"correct","concepts":{"rust.binding":"correct"},"feedback":"yes"}
-            ],"summary":"mixed"}"#,
-        )
-        .unwrap();
-        let grade = Grade::from_raw(&snippet(), raw, "test").unwrap();
-        assert_eq!(grade.blocks[0].verdict, Verdict::Correct);
-        assert_eq!(grade.blocks[1].verdict, Verdict::Wrong);
-        assert_eq!(grade.blocks[1].missing, vec!["x".to_string()]);
-        assert_eq!(grade.correct_blocks(), 1);
-        // Same concept graded correct in one block and wrong in another.
-        assert_eq!(
-            grade.concept_verdicts(),
-            vec![("rust.binding".to_string(), Verdict::Partial)]
+    fn maps_prompts_by_number() {
+        let prompts = prompts(Asks::Blocks);
+        let grade = grade(
+            &prompts,
+            r#"{"prompts":[
+                {"prompt":1,"verdict":"correct","concepts":{"rust.binding":"correct"},"feedback":"yes"}
+            ],"summary":"ok"}"#,
         );
+        assert_eq!(grade.prompts[0].verdict, Verdict::Correct);
+        assert_eq!(grade.correct_prompts(), 1);
     }
 
     #[test]
-    fn ungraded_blocks_are_unknown_not_wrong() {
-        let raw = parse_json_object(r#"{"blocks":[{"block":1,"verdict":"correct"}],"summary":""}"#)
-            .unwrap();
-        let grade = Grade::from_raw(&snippet(), raw, "test").unwrap();
-        assert_eq!(grade.blocks.len(), 2);
-        assert_eq!(grade.blocks[1].verdict, Verdict::Unknown);
+    fn accepts_the_older_blocks_key() {
+        let prompts = prompts(Asks::Blocks);
+        let grade = grade(
+            &prompts,
+            r#"{"blocks":[{"block":1,"verdict":"wrong","missing":["x"],"feedback":"no"}]}"#,
+        );
+        assert_eq!(grade.prompts[0].verdict, Verdict::Wrong);
+        assert_eq!(grade.prompts[0].missing, vec!["x".to_string()]);
+    }
+
+    #[test]
+    fn an_empty_review_is_an_error_not_a_silent_pass() {
+        let prompts = prompts(Asks::Lines);
+        assert_eq!(prompts.len(), 1, "the lone brace is not asked");
+        let raw = parse_json_object(r#"{"prompts":[]}"#).unwrap();
+        assert!(Grade::from_raw(&prompts, raw, "test").is_err());
     }
 
     #[test]
     fn a_missing_verdict_falls_back_to_the_concepts() {
-        let raw =
-            parse_json_object(r#"{"blocks":[{"block":1,"concepts":{"rust.binding":"correct"}}]}"#)
-                .unwrap();
-        let grade = Grade::from_raw(&snippet(), raw, "test").unwrap();
-        assert_eq!(grade.blocks[0].verdict, Verdict::Correct);
+        let prompts = prompts(Asks::Blocks);
+        let grade = grade(
+            &prompts,
+            r#"{"prompts":[{"prompt":1,"concepts":{"rust.binding":"correct"}}]}"#,
+        );
+        assert_eq!(grade.prompts[0].verdict, Verdict::Correct);
     }
 
     #[test]
     fn unknown_concept_labels_do_not_become_correct() {
-        let raw = parse_json_object(r#"{"blocks":[{"block":1,"verdict":"meh"}]}"#).unwrap();
-        let grade = Grade::from_raw(&snippet(), raw, "test").unwrap();
-        assert_eq!(grade.blocks[0].verdict, Verdict::Unknown);
+        let prompts = prompts(Asks::Blocks);
+        let grade = grade(&prompts, r#"{"prompts":[{"prompt":1,"verdict":"meh"}]}"#);
+        assert_eq!(grade.prompts[0].verdict, Verdict::Unknown);
+    }
+
+    #[test]
+    fn a_prompt_the_reviewer_skipped_is_unknown_with_its_concepts() {
+        let snippet = Snippet::parse(
+            r#"
+id = "t-2"
+language = "rust"
+title = "two"
+code = '''
+let a = 1;
+let b = 2;
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "a?"
+concepts = ["rust.a"]
+
+[[blocks]]
+lines = [2, 2]
+ask = "b?"
+concepts = ["rust.b"]
+"#,
+        )
+        .unwrap();
+        let prompts = snippet.prompts(Asks::Blocks);
+        let grade = grade(
+            &prompts,
+            r#"{"prompts":[{"prompt":1,"verdict":"correct"}]}"#,
+        );
+        assert_eq!(grade.prompts.len(), 2);
+        assert_eq!(grade.prompts[1].verdict, Verdict::Unknown);
+        assert_eq!(
+            grade.prompts[1].concepts,
+            vec![("rust.b".to_string(), Verdict::Unknown)]
+        );
+    }
+
+    #[test]
+    fn line_mode_folds_one_concept_across_lines() {
+        let snippet = Snippet::parse(
+            r#"
+id = "t-3"
+language = "rust"
+title = "lines"
+asks = "lines"
+code = '''
+let a = 1;
+let b = 2;
+'''
+
+[[blocks]]
+lines = [1, 2]
+ask = "the bindings"
+concepts = ["rust.binding"]
+"#,
+        )
+        .unwrap();
+        let prompts = snippet.prompts(Asks::Lines);
+        assert_eq!(prompts.len(), 2);
+        let grade = grade(
+            &prompts,
+            r#"{"prompts":[
+                {"prompt":1,"verdict":"correct","concepts":{"rust.binding":"correct"}},
+                {"prompt":2,"verdict":"wrong","concepts":{"rust.binding":"wrong"}}
+            ]}"#,
+        );
+        assert_eq!(
+            grade.concept_verdicts(),
+            vec![("rust.binding".to_string(), Verdict::Partial)]
+        );
     }
 }

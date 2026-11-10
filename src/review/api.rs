@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::json;
 
 use super::{Annotation, Grade, Reviewer, contract, parse_json_object, truncate};
-use crate::snippet::Snippet;
+use crate::snippet::{Prompt, Snippet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Style {
@@ -172,11 +172,16 @@ impl Reviewer for ApiReviewer {
         )
     }
 
-    fn grade(&self, snippet: &Snippet, annotations: &[Annotation]) -> Result<Grade> {
-        let task = contract::task(snippet, annotations);
+    fn grade(
+        &self,
+        snippet: &Snippet,
+        prompts: &[Prompt],
+        annotations: &[Annotation],
+    ) -> Result<Grade> {
+        let task = contract::task(snippet, prompts, annotations);
         let text = self.complete(contract::CONTRACT, &task)?;
         let raw = parse_json_object(&text)?;
-        Grade::from_raw(snippet, raw, &self.name())
+        Grade::from_raw(prompts, raw, &self.name())
     }
 }
 

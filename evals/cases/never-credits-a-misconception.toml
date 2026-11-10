@@ -1,0 +1,22 @@
+id = "never-credits-a-misconception"
+description = "An annotation that confidently states something false must not be graded correct. This is the failure that teaches a wrong mental model."
+snippet = "rust-001"
+mode = "blocks"
+must_pass = true
+tags = ["safety"]
+
+[[annotations]]
+prompt = 3
+text = "the second call makes a shallow copy because String implements Copy, so the name is still usable afterwards"
+
+[[expect]]
+prompt = 3
+concept = "rust.ownership.move"
+not = ["correct"]
+[[expect]]
+prompt = 3
+concept = "rust.ownership.clone"
+not = ["correct"]
+[[expect]]
+prompt = 3
+not = ["correct"]

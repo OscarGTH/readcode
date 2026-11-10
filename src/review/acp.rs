@@ -24,7 +24,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 use super::{Annotation, Grade, Reviewer, contract, parse_json_object, truncate};
-use crate::snippet::Snippet;
+use crate::snippet::{Prompt, Snippet};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
@@ -663,13 +663,18 @@ impl Reviewer for AcpReviewer {
         format!("acp:{}", self.program)
     }
 
-    fn grade(&self, snippet: &Snippet, annotations: &[Annotation]) -> Result<Grade> {
+    fn grade(
+        &self,
+        snippet: &Snippet,
+        prompts: &[Prompt],
+        annotations: &[Annotation],
+    ) -> Result<Grade> {
         let mut client = self.connect()?;
-        let prompt = contract::prime(&contract::task(snippet, annotations));
+        let prompt = contract::prime(&contract::task(snippet, prompts, annotations));
         let text = client.prompt(&prompt)?;
         let raw = parse_json_object(&text)
             .with_context(|| format!("the agent ({}) did not return a grade", client.agent_name))?;
-        let mut grade = Grade::from_raw(snippet, raw, &self.name())?;
+        let mut grade = Grade::from_raw(prompts, raw, &self.name())?;
         if !client.refusals.is_empty() {
             grade.summary = format!(
                 "{} (refused tool use: {})",
@@ -710,8 +715,11 @@ concepts = ["rust.binding"]
 
     #[test]
     fn grading_carries_the_contract_without_a_system_prompt() {
+        let snippet = Snippet::parse(SNIPPET).unwrap();
+        let prompts = snippet.prompts(crate::snippet::Asks::Blocks);
         let prompt = contract::prime(&contract::task(
-            &Snippet::parse(SNIPPET).unwrap(),
+            &snippet,
+            &prompts,
             &[Annotation::new(0, "x is bound")],
         ));
         assert!(prompt.starts_with(contract::CONTRACT));
@@ -910,8 +918,9 @@ concepts = ["rust.binding"]
 
         let text = client.prompt("grade this").unwrap();
         let raw = parse_json_object(&text).unwrap();
-        let grade = Grade::from_raw(&snippet(), raw, "acp:fixture").unwrap();
-        assert_eq!(grade.blocks[0].verdict, crate::srs::Verdict::Correct);
+        let prompts = snippet().prompts(crate::snippet::Asks::Blocks);
+        let grade = Grade::from_raw(&prompts, raw, "acp:fixture").unwrap();
+        assert_eq!(grade.prompts[0].verdict, crate::srs::Verdict::Correct);
         assert_eq!(client.refusals, vec!["write to disk".to_string()]);
 
         let seen = agent.join().unwrap();

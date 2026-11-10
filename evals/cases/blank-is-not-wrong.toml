@@ -1,0 +1,14 @@
+id = "blank-is-not-wrong"
+description = "An empty answer is `unknown`. Treating silence as a wrong answer would punish a learner twice for the same gap."
+snippet = "rust-004"
+mode = "blocks"
+must_pass = true
+tags = ["pedagogy", "safety"]
+
+[[annotations]]
+prompt = 2
+text = ""
+
+[[expect]]
+prompt = 2
+verdict = "unknown"

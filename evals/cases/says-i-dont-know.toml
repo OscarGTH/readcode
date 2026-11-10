@@ -1,0 +1,18 @@
+id = "says-i-dont-know"
+description = "Saying you do not know is `unknown`, never `wrong`: the scheduler must resurface it, not punish it."
+snippet = "rust-005"
+mode = "lines"
+must_pass = true
+tags = ["pedagogy", "safety"]
+
+[[annotations]]
+prompt = 1
+text = "I don't know."
+
+[[expect]]
+prompt = 1
+verdict = "unknown"
+[[expect]]
+prompt = 1
+concept = "rust.use.import"
+verdict = "unknown"

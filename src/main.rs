@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use readcode::corpus::Corpus;
 use readcode::review::{Reviewer, acp::AcpReviewer, api::ApiReviewer, local::LocalReviewer};
 use readcode::session;
+use readcode::snippet::Asks;
 use readcode::srs::{self, ConceptState};
 use readcode::store::{self, Progress};
 use readcode::ui::{self, Style};
@@ -45,6 +46,14 @@ struct Cli {
     #[arg(long, global = true, value_name = "ID")]
     snippet: Option<String>,
 
+    /// Ask block by block, whatever the corpus prefers.
+    #[arg(long, global = true, conflicts_with = "lines")]
+    blocks: bool,
+
+    /// Ask line by line, whatever the corpus prefers.
+    #[arg(long, global = true)]
+    lines: bool,
+
     /// Disable ANSI colour.
     #[arg(long, global = true)]
     no_color: bool,
@@ -63,6 +72,19 @@ enum Backend {
     Acp,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum EvalTarget {
+    /// Deterministic mock: answers from the case's own expectations, so it only
+    /// proves the harness.
+    Mock,
+    /// The offline keyword rubric.
+    Local,
+    /// A BYOK API key.
+    Api,
+    /// Your own agent over ACP (spends tokens).
+    Acp,
+}
+
 #[derive(Clone, Debug, Subcommand)]
 enum Command {
     /// Annotate the snippet that is most due (default).
@@ -73,6 +95,30 @@ enum Command {
     List,
     /// Validate the corpus: every line covered, ids unique, rubrics complete.
     Check,
+    /// Run the grading eval suite (see evals/).
+    Eval {
+        /// Which reviewer to measure.
+        #[arg(long, value_enum, default_value_t = EvalTarget::Local)]
+        target: EvalTarget,
+        /// Case directory.
+        #[arg(long, value_name = "DIR", default_value = "evals/cases")]
+        cases: PathBuf,
+        /// Only run cases whose id or tag contains this.
+        #[arg(long, value_name = "NEEDLE")]
+        filter: Option<String>,
+        /// Trials per case; the majority decides.
+        #[arg(long, default_value_t = 1)]
+        trials: u32,
+        /// Fail when the case score is below this.
+        #[arg(long, default_value_t = 0.0)]
+        min_score: f64,
+        /// Where run artifacts are written.
+        #[arg(long, value_name = "DIR", default_value = "evals/runs")]
+        runs: PathBuf,
+        /// Do not write a run directory.
+        #[arg(long)]
+        no_save: bool,
+    },
     /// Delete saved progress.
     Reset {
         /// Required: this is irreversible.
@@ -116,16 +162,28 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(&agent_cwd).ok();
             let reviewer = build_reviewer(&cli, backend, agent_cwd)?;
 
+            let mode = if cli.lines {
+                Asks::Lines
+            } else if cli.blocks {
+                Asks::Blocks
+            } else {
+                session::choose_mode(chosen, &progress)
+            };
+
             let mut input = io::stdin().lock();
             let mut out = io::stdout();
+            let mut term = session::Terminal {
+                input: &mut input,
+                out: &mut out,
+                style,
+            };
             let outcome = session::run(
                 chosen,
+                mode,
                 reviewer.as_ref(),
                 &mut progress,
                 now,
-                style,
-                &mut input,
-                &mut out,
+                &mut term,
             )?;
             if outcome.is_some() {
                 progress.save(&progress_path)?;
@@ -167,14 +225,16 @@ fn main() -> Result<()> {
                 } else {
                     "new"
                 };
+                let mode = snippet.resolve_mode(snippet.asks);
                 writeln!(
                     out,
-                    "{}  {:<5} {:<52} {} blocks · {} concepts · {seen}",
+                    "{}  {:<5} {:<52} {} blocks · {} concepts · asks {:<6} · {seen}",
                     style.bold(&snippet.id),
                     snippet.language,
                     snippet.title,
                     snippet.blocks.len(),
-                    snippet.concepts().len()
+                    snippet.concepts().len(),
+                    mode.label()
                 )?;
             }
             Ok(())
@@ -196,6 +256,68 @@ fn main() -> Result<()> {
                 println!("{} {problem}", style.red("✗"));
             }
             bail!("{} problem(s) in the corpus", problems.len());
+        }
+
+        Command::Eval {
+            target,
+            cases,
+            filter,
+            trials,
+            min_score,
+            runs,
+            no_save,
+        } => {
+            let mut suite = readcode::eval::load_dir(&cases)?;
+            if let Some(needle) = &filter {
+                suite.retain(|case| {
+                    case.id.contains(needle.as_str())
+                        || case.tags.iter().any(|tag| tag.contains(needle.as_str()))
+                });
+                if suite.is_empty() {
+                    bail!("no case matches `{needle}`");
+                }
+            }
+
+            let agent_cwd = data_dir.join("agent");
+            std::fs::create_dir_all(&agent_cwd).ok();
+
+            let mut summary = match target {
+                EvalTarget::Mock => readcode::eval::run_suite_mock(&corpus, &suite, trials, false)?,
+                EvalTarget::Local => {
+                    readcode::eval::run_suite(&corpus, &suite, &LocalReviewer, trials)?
+                }
+                EvalTarget::Api => {
+                    let reviewer = build_reviewer(&cli, Backend::Api, agent_cwd)?;
+                    readcode::eval::run_suite(&corpus, &suite, reviewer.as_ref(), trials)?
+                }
+                EvalTarget::Acp => {
+                    let reviewer = build_reviewer(&cli, Backend::Acp, agent_cwd)?;
+                    readcode::eval::run_suite(&corpus, &suite, reviewer.as_ref(), trials)?
+                }
+            };
+
+            if !no_save {
+                summary.dir = Some(readcode::eval::write_run(&summary, &runs)?);
+            }
+
+            println!("{}", summary.report());
+
+            let must_fail = summary.must_pass_failures();
+            if !must_fail.is_empty() {
+                bail!(
+                    "{} must-pass case(s) failed: {}",
+                    must_fail.len(),
+                    must_fail.join(", ")
+                );
+            }
+            if summary.score() < min_score {
+                bail!(
+                    "score {:.2} is below --min-score {:.2}",
+                    summary.score(),
+                    min_score
+                );
+            }
+            Ok(())
         }
 
         Command::Reset { yes } => {

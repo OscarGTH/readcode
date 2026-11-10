@@ -12,6 +12,7 @@
 //! * [`ui`] — terminal rendering.
 
 pub mod corpus;
+pub mod eval;
 pub mod review;
 pub mod session;
 pub mod snippet;

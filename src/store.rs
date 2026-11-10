@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::snippet::Asks;
 use crate::srs::{ConceptState, Verdict};
 
 const MAX_EVENTS: usize = 500;
@@ -17,7 +18,10 @@ const FILE_NAME: &str = "progress.json";
 pub struct Event {
     pub at: u64,
     pub snippet: String,
-    pub block: usize,
+    /// 0-based index into the sitting's prompts. Older progress files call it
+    /// `block`; both are read.
+    #[serde(default, alias = "block")]
+    pub prompt: usize,
     pub verdict: Verdict,
 }
 
@@ -36,6 +40,10 @@ pub struct Progress {
     pub last_snippet: Option<String>,
     #[serde(default)]
     pub seen_snippets: Vec<String>,
+    /// The granularity each snippet was last asked at, so the next visit can
+    /// alternate between blocks and lines.
+    #[serde(default)]
+    pub last_modes: BTreeMap<String, Asks>,
     #[serde(default)]
     pub concepts: BTreeMap<String, ConceptState>,
     #[serde(default)]
@@ -55,6 +63,7 @@ impl Default for Progress {
             sessions: 0,
             last_snippet: None,
             seen_snippets: Vec::new(),
+            last_modes: BTreeMap::new(),
             concepts: BTreeMap::new(),
             events: Vec::new(),
         }
@@ -98,6 +107,14 @@ impl Progress {
             let drop = self.events.len() - MAX_EVENTS;
             self.events.drain(0..drop);
         }
+    }
+
+    pub fn set_last_mode(&mut self, snippet_id: &str, mode: Asks) {
+        self.last_modes.insert(snippet_id.to_string(), mode);
+    }
+
+    pub fn last_mode(&self, snippet_id: &str) -> Option<Asks> {
+        self.last_modes.get(snippet_id).copied()
     }
 
     pub fn seen(&self, snippet_id: &str) -> bool {
@@ -161,7 +178,7 @@ mod tests {
         progress.record(Event {
             at: 100,
             snippet: "rust-001".into(),
-            block: 1,
+            prompt: 1,
             verdict: Verdict::Correct,
         });
         progress.save(&path).unwrap();
@@ -181,7 +198,7 @@ mod tests {
             progress.record(Event {
                 at: i as u64,
                 snippet: "s".into(),
-                block: 1,
+                prompt: 1,
                 verdict: Verdict::Correct,
             });
         }

@@ -4,7 +4,7 @@
 use std::io::{self, Write};
 
 use crate::review::Grade;
-use crate::snippet::Snippet;
+use crate::snippet::{Prompt, Snippet};
 use crate::srs::{ConceptState, Verdict, describe_due};
 
 #[derive(Debug, Clone, Copy)]
@@ -84,7 +84,12 @@ pub fn bar(style: Style, strength: f64) -> String {
     format!("{painted} {:>3.0}%", strength * 100.0)
 }
 
-pub fn print_snippet(out: &mut dyn Write, style: Style, snippet: &Snippet) -> io::Result<()> {
+/// Number width for the gutter, so lines stay aligned down a snippet.
+pub fn gutter_width(snippet: &Snippet) -> usize {
+    snippet.line_count().to_string().len().max(2)
+}
+
+pub fn print_header(out: &mut dyn Write, style: Style, snippet: &Snippet) -> io::Result<()> {
     writeln!(
         out,
         "{}",
@@ -97,17 +102,21 @@ pub fn print_snippet(out: &mut dyn Write, style: Style, snippet: &Snippet) -> io
     if let Some(source) = &snippet.source {
         writeln!(out, "{}", style.dim(&format!("source: {source}")))?;
     }
+    Ok(())
+}
 
+/// The whole snippet, grouped by block. Line mode shows this once, so the
+/// learner has the surrounding code while answering one line at a time.
+pub fn print_code(out: &mut dyn Write, style: Style, snippet: &Snippet) -> io::Result<()> {
     let lines = snippet.code_lines();
-    let width = snippet.line_count().to_string().len().max(2);
-
+    let width = gutter_width(snippet);
     for (index, block) in snippet.blocks.iter().enumerate() {
         let (start, end) = (block.lines[0], block.lines[1]);
         writeln!(out)?;
         writeln!(
             out,
             "{}",
-            style.cyan(&format!("┌ block {} · lines {start}-{end}", index + 1))
+            style.cyan(&format!("── block {} · lines {start}-{end}", index + 1))
         )?;
         for number in start..=end {
             if let Some(line) = lines.get(number - 1) {
@@ -119,15 +128,77 @@ pub fn print_snippet(out: &mut dyn Write, style: Style, snippet: &Snippet) -> io
                 )?;
             }
         }
-        writeln!(out, "{}", style.dim(&format!("└ {}", block.ask)))?;
     }
+    Ok(())
+}
+
+/// One block with its lines and question: the block-mode unit.
+pub fn print_block(
+    out: &mut dyn Write,
+    style: Style,
+    snippet: &Snippet,
+    block_index: usize,
+) -> io::Result<()> {
+    let Some(block) = snippet.blocks.get(block_index) else {
+        return Ok(());
+    };
+    let (start, end) = (block.lines[0], block.lines[1]);
+    let lines = snippet.code_lines();
+    let width = gutter_width(snippet);
+    writeln!(
+        out,
+        "{}",
+        style.cyan(&format!(
+            "┌ block {} · lines {start}-{end}",
+            block_index + 1
+        ))
+    )?;
+    for number in start..=end {
+        if let Some(line) = lines.get(number - 1) {
+            writeln!(
+                out,
+                "{} {}",
+                style.dim(&format!("{number:>width$} │")),
+                line
+            )?;
+        }
+    }
+    writeln!(out, "{}", style.dim(&format!("└ {}", block.ask)))?;
+    Ok(())
+}
+
+/// One line-mode question: the line itself, then what to say about it.
+pub fn print_line_prompt(
+    out: &mut dyn Write,
+    style: Style,
+    width: usize,
+    number: usize,
+    prompt: &Prompt,
+) -> io::Result<()> {
+    writeln!(out)?;
+    let concepts = prompt.concepts.join(", ");
+    let header = if concepts.is_empty() {
+        format!("┌ line {number}")
+    } else {
+        format!("┌ line {number} · {concepts}")
+    };
+    writeln!(out, "{}", style.cyan(&header))?;
+    for (offset, line) in prompt.lines.iter().enumerate() {
+        writeln!(
+            out,
+            "{} {}",
+            style.dim(&format!("{:>width$} │", number + offset)),
+            line
+        )?;
+    }
+    writeln!(out, "{}", style.bold(&prompt.ask))?;
     Ok(())
 }
 
 pub fn print_grade(
     out: &mut dyn Write,
     style: Style,
-    snippet: &Snippet,
+    prompts: &[Prompt],
     grade: &Grade,
 ) -> io::Result<()> {
     writeln!(
@@ -136,20 +207,19 @@ pub fn print_grade(
         style.bold(&format!("review · {}", grade.reviewer))
     )?;
 
-    for block in &grade.blocks {
-        let (start, end) = snippet
-            .blocks
-            .get(block.block)
-            .map(|b| (b.lines[0], b.lines[1]))
-            .unwrap_or((0, 0));
+    for graded in &grade.prompts {
+        let span = prompts
+            .get(graded.prompt)
+            .map(Prompt::span_label)
+            .unwrap_or_default();
         writeln!(out)?;
         writeln!(
             out,
             "  {} {}",
-            style.bold(&format!("block {} · lines {start}-{end}", block.block + 1)),
-            verdict_label(style, block.verdict)
+            style.bold(&format!("prompt {} · {span}", graded.prompt + 1)),
+            verdict_label(style, graded.verdict)
         )?;
-        for (concept, verdict) in &block.concepts {
+        for (concept, verdict) in &graded.concepts {
             writeln!(
                 out,
                 "    {:<34} {}",
@@ -157,10 +227,10 @@ pub fn print_grade(
                 verdict_label(style, *verdict)
             )?;
         }
-        if !block.feedback.is_empty() {
-            writeln!(out, "    {}", block.feedback)?;
+        if !graded.feedback.is_empty() {
+            writeln!(out, "    {}", graded.feedback)?;
         }
-        for missing in &block.missing {
+        for missing in &graded.missing {
             writeln!(out, "    {} {}", style.yellow("!"), style.dim(missing))?;
         }
     }
@@ -239,6 +309,8 @@ pub fn print_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::corpus::Corpus;
+    use crate::snippet::Asks;
 
     #[test]
     fn status_order_keeps_groups_contiguous() {
@@ -287,5 +359,30 @@ mod tests {
         // Out-of-range input cannot produce a bar of the wrong width.
         let wide = bar(style, 4.0);
         assert_eq!(wide.matches('█').count(), 8);
+    }
+
+    #[test]
+    fn line_prompts_render_the_line_and_its_concepts() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("005").unwrap();
+        let prompts = snippet.prompts(Asks::Lines);
+        let mut out: Vec<u8> = Vec::new();
+        print_line_prompt(&mut out, Style::new(false), 1, 6, &prompts[0]).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("┌ line 6 · rust."), "{text}");
+        assert!(text.contains(&prompts[0].lines[0]), "{text}");
+        assert!(text.contains(&prompts[0].ask), "{text}");
+    }
+
+    #[test]
+    fn the_whole_snippet_is_shown_with_block_boundaries() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("003").unwrap();
+        let mut out: Vec<u8> = Vec::new();
+        print_code(&mut out, Style::new(false), snippet).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("── block 1 · lines 1-6"), "{text}");
+        assert!(text.contains("── block 3 · lines 11-13"), "{text}");
+        assert!(text.contains(".filter("), "{text}");
     }
 }

@@ -20,3 +20,5 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test --all-targets
+      - name: Eval harness (deterministic mock, no tokens)
+        run: cargo run --quiet -- eval --target mock --no-save
