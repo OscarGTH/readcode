@@ -164,13 +164,26 @@ pub fn load_dir(dir: &Path) -> Result<Vec<Case>> {
         bail!("no cases found under {}", dir.display());
     }
 
-    let mut cases = Vec::new();
+    let mut sources = Vec::new();
     for path in files {
         let text =
             fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))?;
-        let case = Case::parse(&text).with_context(|| format!("in {}", path.display()))?;
+        sources.push((path.display().to_string(), text));
+    }
+    load_sources(
+        sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str())),
+    )
+}
+
+/// Parses a set of named case documents and checks ids are unique.
+fn load_sources<'a>(sources: impl Iterator<Item = (&'a str, &'a str)>) -> Result<Vec<Case>> {
+    let mut cases = Vec::new();
+    for (name, text) in sources {
+        let case = Case::parse(text).with_context(|| format!("in {name}"))?;
         case.validate()
-            .with_context(|| format!("invalid case in {}", path.display()))?;
+            .with_context(|| format!("invalid case in {name}"))?;
         cases.push(case);
     }
     cases.sort_by(|a, b| a.id.cmp(&b.id));
@@ -195,6 +208,55 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The eval cases ship in the binary too, so `readcode eval` works from a
+/// Homebrew install where `evals/cases/` does not exist.
+const EMBEDDED: &[(&str, &str)] = &[
+    (
+        "blank-is-not-wrong.toml",
+        include_str!("../../evals/cases/blank-is-not-wrong.toml"),
+    ),
+    (
+        "credits-a-paraphrase.toml",
+        include_str!("../../evals/cases/credits-a-paraphrase.toml"),
+    ),
+    (
+        "line-level-entry-api.toml",
+        include_str!("../../evals/cases/line-level-entry-api.toml"),
+    ),
+    (
+        "never-credits-a-misconception.toml",
+        include_str!("../../evals/cases/never-credits-a-misconception.toml"),
+    ),
+    (
+        "off-topic-is-wrong.toml",
+        include_str!("../../evals/cases/off-topic-is-wrong.toml"),
+    ),
+    (
+        "says-i-dont-know.toml",
+        include_str!("../../evals/cases/says-i-dont-know.toml"),
+    ),
+];
+
+/// Loads cases from a directory when one is given (or when `./evals/cases`
+/// exists), otherwise from the embedded copy.
+pub fn load(dir: Option<&std::path::Path>) -> Result<Vec<Case>> {
+    match dir {
+        Some(dir) => load_dir(dir),
+        None => {
+            let default = std::path::Path::new("evals/cases");
+            if default.is_dir() {
+                load_dir(default)
+            } else {
+                load_embedded()
+            }
+        }
+    }
+}
+
+pub fn load_embedded() -> Result<Vec<Case>> {
+    load_sources(EMBEDDED.iter().map(|(name, text)| (*name, *text)))
 }
 
 #[cfg(test)]
@@ -253,6 +315,18 @@ verdict = "unknown"
         let case = Case::parse(&text).unwrap();
         let err = case.validate().unwrap_err().to_string();
         assert!(err.contains("both"), "{err}");
+    }
+
+    #[test]
+    fn the_embedded_cases_load_and_validate() {
+        let cases = super::load_embedded().unwrap();
+        assert_eq!(
+            cases.len(),
+            6,
+            "{:?}",
+            cases.iter().map(|c| &c.id).collect::<Vec<_>>()
+        );
+        assert!(cases.iter().any(|case| case.must_pass));
     }
 
     #[test]

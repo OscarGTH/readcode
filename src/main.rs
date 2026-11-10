@@ -94,9 +94,9 @@ enum Command {
         /// Which reviewer to measure (default: the deterministic mock).
         #[arg(long, value_enum, default_value_t = EvalTarget::Mock)]
         target: EvalTarget,
-        /// Case directory.
-        #[arg(long, value_name = "DIR", default_value = "evals/cases")]
-        cases: PathBuf,
+        /// Case directory (default: `evals/cases` here, else the cases compiled in).
+        #[arg(long, value_name = "DIR")]
+        cases: Option<PathBuf>,
         /// Only run cases whose id or tag contains this.
         #[arg(long, value_name = "NEEDLE")]
         filter: Option<String>,
@@ -294,7 +294,7 @@ fn main() -> Result<()> {
             runs,
             no_save,
         } => {
-            let mut suite = readcode::eval::load_dir(&cases)?;
+            let mut suite = readcode::eval::load(cases.as_deref())?;
             if let Some(needle) = &filter {
                 suite.retain(|case| {
                     case.id.contains(needle.as_str())

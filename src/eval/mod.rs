@@ -6,7 +6,7 @@
 pub mod case;
 pub mod runner;
 
-pub use case::{Case, CaseAnnotation, Expectation, load_dir};
+pub use case::{Case, CaseAnnotation, Expectation, load, load_dir, load_embedded};
 pub use runner::{
     CaseResult, MockReviewer, RunSummary, iso8601, run_case, run_suite, run_suite_mock, write_run,
 };
