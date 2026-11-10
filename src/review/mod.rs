@@ -114,10 +114,28 @@ pub struct RawPrompt {
     pub verdict: String,
     #[serde(default)]
     pub concepts: BTreeMap<String, String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "one_or_many")]
     pub missing: Vec<String>,
     #[serde(default)]
     pub feedback: String,
+}
+
+/// Models sometimes answer `"missing": "one thing"` instead of a list.
+fn one_or_many<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match Option::<OneOrMany>::deserialize(deserializer)? {
+        Some(OneOrMany::One(item)) => vec![item],
+        Some(OneOrMany::Many(items)) => items,
+        None => Vec::new(),
+    })
 }
 
 impl Grade {
@@ -205,10 +223,17 @@ impl Grade {
 /// object and ignore the rest.
 pub fn parse_json_object(text: &str) -> Result<RawGrade> {
     let body = extract_json(text)?;
-    serde_json::from_str::<RawGrade>(&body).with_context(|| {
+    // A model that emits a key twice (a repeated `feedback`, say) makes serde's
+    // derive reject the whole object, and one bad key would throw away a
+    // finished sitting. Round-tripping through `Value` collapses duplicates
+    // (last wins) before the strict parse.
+    let value: serde_json::Value = serde_json::from_str(&body)
+        .with_context(|| format!("the reviewer's JSON is not valid: {}", truncate(&body, 300)))?;
+    let collapsed = serde_json::to_string(&value)?;
+    serde_json::from_str::<RawGrade>(&collapsed).with_context(|| {
         format!(
             "the reviewer's JSON did not match the expected shape: {}",
-            truncate(&body, 300)
+            truncate(&collapsed, 300)
         )
     })
 }
@@ -273,6 +298,21 @@ concepts = ["rust.binding"]
             "Sure! Here you go:\n```json\n{\"prompts\":[],\"summary\":\"ok\"}\n```\nHope it helps.";
         let raw = parse_json_object(text).unwrap();
         assert_eq!(raw.summary, "ok");
+    }
+
+    #[test]
+    fn a_duplicate_key_keeps_the_last_value_instead_of_failing() {
+        // Observed from a real agent: it repeated `feedback` in one prompt and
+        // the strict parse threw the whole grade away.
+        let text = r#"{"prompts":[{"prompt":1,"verdict":"partial","feedback":"first","feedback":"last"}],"summary":"ok"}"#;
+        let raw = parse_json_object(text).unwrap();
+        assert_eq!(raw.prompts[0].feedback, "last");
+    }
+
+    #[test]
+    fn missing_accepts_a_single_string() {
+        let raw = parse_json_object(r#"{"prompts":[{"prompt":1,"missing":"one thing"}]}"#).unwrap();
+        assert_eq!(raw.prompts[0].missing, vec!["one thing".to_string()]);
     }
 
     #[test]

@@ -8,23 +8,7 @@ then marks every concept you were supposed to name: correct, partial, wrong, or 
 Concepts you missed come back sooner. Duolingo, aimed at *reading* code instead of
 writing toy apps nobody needs.
 
-```
-┌ line 6 · rust.hashmap.entry, rust.deref.assign
- 6 │         *counts.entry(word).or_insert(0) += 1;
-Unpack this line: the `*`, the `entry`, and the `or_insert`.
-> entry looks the key up and inserts a default 0 when it is missing, and the star
-> dereferences the mutable reference so we can add one
-> .
-```
-
-```
-review · acp:opencode
-
-  prompt 5 · line 6 ✓ correct
-    rust.hashmap.entry                 ✓ correct
-    rust.deref.assign                  ✓ correct
-    You named the insert-on-missing behaviour and the deref behind the `*`.
-```
+![A readcode sitting: a block of Rust, one question, and the answer typed beneath it](docs/asking.png)
 
 ## Install
 
@@ -76,6 +60,10 @@ readcode --lines           # force line-by-line; --blocks forces the other way
 readcode check             # validate your own snippet files
 readcode reset --yes       # wipe progress and start over
 ```
+
+Then it grades you, per concept, and tells you what you missed:
+
+![The review: a verdict per prompt, a verdict per concept, and the correction for each miss](docs/review.png)
 
 ### Blocks or lines
 
@@ -270,7 +258,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 84 tests, no network, no agent
+cargo test                        # 86 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs
@@ -280,6 +268,11 @@ CI (`.github/workflows/ci.yml`) runs those four steps on **every push, on any br
 on pull requests, and on demand; superseded runs on the same ref are cancelled so a
 quick fixup does not spend the minutes twice. Model-backed evals stay manual, because
 they spend tokens.
+
+The screenshots in `docs/` are real captures, not mock-ups: `scripts/capture_terminal.py`
+runs a sitting under a PTY (so the typed answers are echoed by the tty) and
+`scripts/render_terminal.py` paints the captured ANSI into `docs/*.html`, which is then
+screenshotted in a browser. Regenerate them the same way if the layout changes.
 
 ## Roadmap
 

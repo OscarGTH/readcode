@@ -13,7 +13,7 @@ use crate::srs::ConceptState;
 use crate::store::{Event, Progress};
 use crate::ui::{self, Style};
 
-const HELP: &str = "explain in your own words · `.` on its own line finishes · `:unknown` if you have no idea · `:quit` stops";
+const HELP: &str = "your own words · `.` finishes · `:unknown` = no idea · `:quit` stops";
 
 /// Where a sitting reads and writes, bundled so a session takes one terminal
 /// instead of three separate handles.
