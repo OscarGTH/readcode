@@ -305,6 +305,14 @@ pub fn print_grade(
                 verdict_label(style, *verdict)
             )?;
         }
+        if let Some(question) = prompts.get(graded.prompt) {
+            writeln!(
+                out,
+                "    {} {}",
+                style.dim("ask ·"),
+                style.dim(&question.ask)
+            )?;
+        }
         if !graded.feedback.is_empty() {
             writeln!(out, "    {}", graded.feedback)?;
         }

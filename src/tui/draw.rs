@@ -430,6 +430,17 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
             graded.verdict,
         );
 
+        // The question belongs here: without it "you" is an answer to
+        // something the learner has to remember from before the grading.
+        labelled(
+            &mut rows,
+            "ask",
+            &prompt.ask,
+            Theme::hint(),
+            Theme::dim(),
+            width,
+        );
+
         let answer = app
             .answers
             .get(graded.prompt)
@@ -908,6 +919,12 @@ mod tests {
             screen.contains("✓ 1 │ use std::collections::HashMap;"),
             "{screen}"
         );
+        // The question, so the answer is not judged against a memory.
+        assert!(screen.contains("ask"), "{screen}");
+        assert!(
+            screen.contains(&app.prompts[1].ask[..24]),
+            "the second question should be on screen:\n{screen}"
+        );
         assert!(screen.contains("~ 3 │ fn count_words"), "{screen}");
         // The learner's own words, and the lesson when the answer fell short.
         assert!(screen.contains("you"), "{screen}");
@@ -945,6 +962,9 @@ mod tests {
         let screen = screen(&app, 96, 26);
 
         assert!(screen.contains("✓ 1 │ fn main() {"), "{screen}");
+        // Even a correct line shows what was asked.
+        assert!(screen.contains("ask     "), "{screen}");
+        assert!(screen.contains(&app.prompts[0].ask), "{screen}");
         // Praise and a lesson on a correct line are clutter, so neither appears.
         assert!(!screen.contains("Spot on"), "{screen}");
         assert!(!screen.contains("why"), "{screen}");
