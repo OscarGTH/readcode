@@ -105,9 +105,17 @@ pub fn draw(frame: &mut Frame, app: &App) {
         return;
     }
 
+    // The question sits beside the answer, so its height is part of the layout:
+    // a fixed two rows used to cut long questions off mid-sentence.
+    let question_rows = app
+        .current()
+        .map(|prompt| wrap(&prompt.ask, area.width.saturating_sub(4) as usize).len())
+        .unwrap_or(1)
+        .clamp(1, 4) as u16;
     let input_height = match app.phase {
         Phase::Review => 1,
-        _ => 6,
+        Phase::Confirm => 6,
+        Phase::Annotate | Phase::Grading => question_rows + 5,
     };
     let [header, body, ask, footer] = Layout::vertical([
         Constraint::Length(1),
@@ -204,27 +212,26 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
 
     let mut rows: Vec<Line> = Vec::new();
     let mut focus_row = 0usize;
-    // The last row the focus needs kept on screen: the question sits below the code
-    // it is about, so scrolling to the code row alone can hide the question.
+    // Row of the focused span's last line, so follow-scroll keeps a whole block in
+    // view instead of only its first line.
     let mut focus_end = 0usize;
     for (index, _line) in lines.iter().enumerate() {
         let number = index + 1;
 
         // A note about this line alone goes above it, where a comment about a
-        // line belongs.
-        if let Some((end, note)) = notes.get(&number)
-            && *end == number
+        // line belongs — question first, so the answer has something to be an
+        // answer to.
+        if let Some(note) = notes.get(&number)
+            && note.end == number
         {
-            for piece in wrap(note, text_width) {
-                rows.push(Line::from(vec![
-                    Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
-                    Span::styled(format!("// {piece}"), Theme::note()),
-                ]));
-            }
+            push_note(&mut rows, gutter, text_width, note, None);
         }
 
         if focus.is_some_and(|(start, _)| number == start) {
             focus_row = rows.len();
+        }
+        if focus.is_some_and(|(_, end)| number == end) {
+            focus_end = rows.len();
         }
         let marked = focus.is_some_and(|(start, end)| number >= start && number <= end);
         let marker = if marked { ">" } else { " " };
@@ -251,52 +258,14 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
         }
         rows.push(Line::from(spans));
 
-        // The question, under the code it asks about. It used to sit in the panel
-        // at the bottom, where a long one wrapped out of view and the eye at the
-        // code never saw it at all.
-        if app.phase == Phase::Annotate
-            && focus.is_some_and(|(_, end)| number == end)
-            && let Some(prompt) = app.current()
-        {
-            for (piece_index, piece) in wrap(&prompt.ask, text_width.saturating_sub(3))
-                .into_iter()
-                .enumerate()
-            {
-                let lead = if piece_index == 0 { "└ " } else { "  " };
-                rows.push(Line::from(vec![
-                    Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
-                    Span::styled(format!("{lead}{piece}"), Theme::title()),
-                ]));
-            }
-            focus_end = rows.len();
-        }
-
         // A note about a whole block goes after the block's last line, labelled
         // with the span, so it never reads as a comment on its first line.
-        for (start, end, note) in notes
+        for (start, note) in notes
             .iter()
-            .filter(|(start, (end, _))| *end == number && **start < *end)
-            .map(|(start, (end, note))| (*start, *end, note))
+            .filter(|(start, note)| note.end == number && **start < note.end)
         {
-            let label = format!("// on lines {start}-{end}: ");
-            let mut first = true;
-            for piece in wrap(note, text_width.saturating_sub(label.len())) {
-                rows.push(Line::from(vec![
-                    Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
-                    Span::styled(
-                        format!(
-                            "{}{piece}",
-                            if first {
-                                label.clone()
-                            } else {
-                                "   ".to_string()
-                            }
-                        ),
-                        Theme::note(),
-                    ),
-                ]));
-                first = false;
-            }
+            let label = format!("on lines {start}-{number}: ");
+            push_note(&mut rows, gutter, text_width, note, Some(&label));
         }
     }
 
@@ -318,6 +287,58 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
         .block(Block::default().borders(Borders::NONE))
         .scroll((scroll, 0));
     frame.render_widget(paragraph, area);
+}
+
+/// A note as it appears on the code: the question, then the answer.
+///
+/// The question is written with the answer rather than only in the input panel,
+/// because once the next prompt arrives it is gone from the screen and the note
+/// alone no longer says what it was answering.
+fn push_note(
+    rows: &mut Vec<Line<'static>>,
+    gutter: usize,
+    width: usize,
+    note: &crate::tui::app::Note,
+    label: Option<&str>,
+) {
+    let label = label.unwrap_or("");
+    let indent = label.len();
+    let mut first = true;
+    for piece in wrap(&note.ask, width.saturating_sub(indent + 5)) {
+        rows.push(Line::from(vec![
+            Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
+            Span::styled(
+                format!(
+                    "{}{piece}",
+                    if first {
+                        format!("// ? {label}")
+                    } else {
+                        "//   ".to_string()
+                    }
+                ),
+                Theme::hint(),
+            ),
+        ]));
+        first = false;
+    }
+    let mut first = true;
+    for piece in wrap(&note.answer, width.saturating_sub(indent + 5)) {
+        rows.push(Line::from(vec![
+            Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
+            Span::styled(
+                format!(
+                    "{}{piece}",
+                    if first {
+                        "// ".to_string()
+                    } else {
+                        "//   ".to_string()
+                    }
+                ),
+                Theme::note(),
+            ),
+        ]));
+        first = false;
+    }
 }
 
 fn draw_ask(frame: &mut Frame, app: &App, area: Rect) {
@@ -342,8 +363,25 @@ fn draw_ask(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let [hint, input] = Layout::vertical([Constraint::Length(1), Constraint::Min(3)]).areas(inner);
+    let question_rows = wrap(&prompt.ask, inner.width.saturating_sub(2) as usize)
+        .len()
+        .clamp(1, 4) as u16;
+    let [question, hint, input] = Layout::vertical([
+        Constraint::Length(question_rows),
+        Constraint::Length(1),
+        Constraint::Min(2),
+    ])
+    .areas(inner);
 
+    // Asked here, beside the answer, and nowhere else while it is being asked.
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            format!(" {}", prompt.ask),
+            Theme::title(),
+        )))
+        .wrap(Wrap { trim: false }),
+        question,
+    );
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             " your words · Enter submits · Ctrl-J newline · Ctrl-B back",
@@ -932,8 +970,12 @@ mod tests {
         let screen = screen(&app, 96, 30);
 
         let note = screen
-            .find("// on lines 1-5: the counter starts at zero")
+            .find("// ? on lines 1-5: ")
             .unwrap_or_else(|| panic!("block note labelled with its span:\n{screen}"));
+        assert!(
+            screen.contains("// the counter starts at zero"),
+            "the answer follows its question:\n{screen}"
+        );
         let block_start = screen.find(" 1 │").expect("line 1");
         let block_end = screen.find(" 5 │").expect("line 5");
         assert!(note > block_end, "the note follows the block:\n{screen}");
@@ -1332,7 +1374,7 @@ mod tests {
     }
 
     #[test]
-    fn the_question_sits_under_the_code_it_asks_about() {
+    fn the_question_is_asked_beside_the_input_and_not_on_the_code() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("rust-006").unwrap();
         let app = App::new(
@@ -1344,8 +1386,6 @@ mod tests {
         let screen = screen(&app, 96, 24);
         let rows: Vec<&str> = screen.lines().collect();
 
-        // The question wraps, so match its opening words rather than the whole
-        // string — which is itself the point: it is wrapped, not clipped.
         let opening: String = app.prompts[0]
             .ask
             .split_whitespace()
@@ -1356,17 +1396,47 @@ mod tests {
             .iter()
             .position(|row| row.contains(&opening))
             .unwrap_or_else(|| panic!("the question is not on screen:\n{screen}"));
-        // Directly below the last line of the span it asks about, not in the
-        // panel at the bottom where it used to be clipped by long questions.
+        // Below the code, in the panel the answer is typed into.
         let last_code = rows
             .iter()
-            .position(|row| row.contains(&format!("{} │", app.prompts[0].end)))
-            .unwrap_or_else(|| panic!("no code row for the span:\n{screen}"));
+            .rposition(|row| row.contains("│ ") && !row.contains("//"))
+            .unwrap_or(0);
         assert!(
-            ask_row == last_code + 1,
-            "the question is not under its code (code {last_code}, ask {ask_row}):\n{screen}"
+            ask_row > last_code,
+            "the question belongs beside the input, not on the code:\n{screen}"
         );
-        assert!(rows[ask_row].contains('└'), "{screen}");
+        assert!(
+            !screen.contains('└'),
+            "nothing is drawn onto the code:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn an_answered_question_is_written_onto_the_code_with_the_answer() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-006").unwrap();
+        let mut app = App::new(
+            snippet,
+            snippet.prompts(Asks::Blocks),
+            Asks::Blocks,
+            "check".into(),
+        );
+        for char_ in "both are i32".chars() {
+            app.on_key(Key::Char(char_));
+        }
+        app.on_key(Key::Enter);
+        let screen = screen(&app, 96, 30);
+
+        // The question you answered, and your answer under it, as one comment.
+        assert!(
+            screen.contains("// ? on lines 1-3: What type is `apples`"),
+            "{screen}"
+        );
+        assert!(screen.contains("// both are i32"), "{screen}");
+        // The panel has moved on to the next question, so the answer you gave is
+        // now only findable on the code — which is why the question is written
+        // there with it.
+        assert!(screen.contains("2/3"), "the sitting moved on:\n{screen}");
     }
 
     #[test]
@@ -1419,8 +1489,10 @@ mod tests {
         // The code is still there, with the notes written on it: those notes are
         // the answers, so checking them means seeing the code too.
         assert!(screen.contains("fn main() {"), "{screen}");
-        // The first answer, written into the code as a note over its span.
-        assert!(screen.contains("on lines 1-3: answer 0"), "{screen}");
+        // The first answer, written into the code as a note over its span,
+        // with the question it was answering above it.
+        assert!(screen.contains("// ? on lines 1-3: "), "{screen}");
+        assert!(screen.contains("// answer 0"), "{screen}");
         // The answer being checked is repeated where the input used to be.
         assert!(screen.contains("answer 1 of "), "{screen}");
         assert!(screen.contains("\"answer 0\""), "{screen}");
