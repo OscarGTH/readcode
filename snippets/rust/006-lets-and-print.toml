@@ -14,18 +14,18 @@ fn main() {
 
 [[blocks]]
 lines = [1, 3]
-ask = "What type is `apples`, when nothing says so — and what may you not do with the name afterwards?"
+ask = "What type is `apples`? What can you not do with the name?"
 concepts = ["rust.binding.immutable", "rust.type.default_int"]
 notes = { "rust.binding.immutable" = "`let` binds without `mut`, so the name cannot be reassigned; `apples = 4` would not compile.", "rust.type.default_int" = "An integer literal with nothing to force it is an `i32`, so both bindings are `i32` — there is no `int`, and no widening later." }
 
 [[blocks]]
 lines = [4, 4]
-ask = "Where does `total`'s type come from, and could you add an `f64` to it here?"
+ask = "Where does `total`'s type come from? Could you add an `f64` here?"
 concepts = ["rust.type.inference"]
 notes = { "rust.type.inference" = "The compiler works the type out from the operands: `i32 + i32` is `i32`. Rust will not silently mix numeric types, so adding an `f64` needs an explicit `as`." }
 
 [[blocks]]
 lines = [5, 6]
-ask = "`println!` ends in `!` — what does that mark, and where does `{total}` get its value?"
+ask = "Why does `println!` end in `!`? Where does `{total}` get its value?"
 concepts = ["rust.macro.println", "rust.format.capture"]
 notes = { "rust.macro.println" = "The `!` marks a macro: it is expanded at compile time and checks the format string against its arguments, which a function call cannot do.", "rust.format.capture" = "`{total}` is captured from the surrounding scope by name; without capture you would pass `total` as an extra argument after the format string." }

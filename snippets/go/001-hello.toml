@@ -16,18 +16,18 @@ func main() {
 
 [[blocks]]
 lines = [1, 1]
-ask = "What does `package main` decide about this file, and what would a different name mean?"
+ask = "What does `package main` tell Go about this file?"
 concepts = ["go.package.main"]
 notes = { "go.package.main" = "A package called `main` is compiled into an executable, and its `func main()` is where the program starts. Any other package name makes a library that cannot be run on its own." }
 
 [[blocks]]
 lines = [2, 4]
-ask = "Where does the name `fmt` come from, and what happens if you import a package you never use?"
+ask = "Where does the name `fmt` come from? What happens to an import you never use?"
 concepts = ["go.import"]
 notes = { "go.import" = "The last element of the import path is the name you write: `\"fmt\"` gives `fmt.Println`. An unused import is a compile error in Go, unlike an unused variable-free language." }
 
 [[blocks]]
 lines = [5, 8]
-ask = "What does `:=` do that `var name string = \"ferris\"` also does — and what can it not do?"
+ask = "What does `:=` do? Where can you not use it?"
 concepts = ["go.short_var"]
 notes = { "go.short_var" = "`:=` declares and assigns in one step, taking the type from the right-hand side. It only works inside a function: at package level you must use `var`." }

@@ -21,18 +21,18 @@ fn main() {
 
 [[blocks]]
 lines = [1, 5]
-ask = "Walk the string through `shout`: who owns it on the way in, and on the way out?"
+ask = "Who owns the string going in? Who owns it coming back?"
 concepts = ["rust.ownership.param", "rust.mut.param", "rust.ownership.return"]
 notes = { "rust.ownership.param" = "`String` is not `Copy`, so passing it by value hands ownership to `shout`, which now owns that buffer.", "rust.mut.param" = "`mut text` makes the binding mutable inside this function only; it grants nothing to the caller.", "rust.ownership.return" = "The tail expression `text` returns the value, moving ownership back to the caller." }
 
 [[blocks]]
 lines = [6, 7]
-ask = "What does this binding own, and what may you not do with it afterwards?"
+ask = "What does this binding own? What can you not do with it?"
 concepts = ["rust.heap.string", "rust.binding.immutable"]
 notes = { "rust.heap.string" = "`String::from` allocates a growable buffer on the heap and the binding owns it; a `&str` would only borrow one.", "rust.binding.immutable" = "`let name` is immutable — the value behind it cannot be mutated without `mut`, though it can still be moved." }
 
 [[blocks]]
 lines = [8, 11]
-ask = "Why is the second `shout` call the one that ends `name`, and the first not?"
+ask = "Why does the second call use up `name`, but not the first?"
 concepts = ["rust.ownership.clone", "rust.ownership.move", "rust.format.capture"]
 notes = { "rust.ownership.clone" = "`name.clone()` allocates a second owned `String`, which is why `name` is still usable on the next line.", "rust.ownership.move" = "The second call moves `name`; touching `name` after line 9 would not compile.", "rust.format.capture" = "`{loud}` and `{quiet}` capture locals by name instead of passing positional arguments." }

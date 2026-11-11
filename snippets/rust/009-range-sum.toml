@@ -15,18 +15,18 @@ fn total(limit: u32) -> u32 {
 
 [[blocks]]
 lines = [1, 1]
-ask = "What does `u32` rule out, and what happens when a sum of many `u32`s passes the maximum?"
+ask = "What does `u32` rule out? What happens if the sum passes the maximum?"
 concepts = ["rust.type.u32", "rust.overflow"]
 notes = { "rust.type.u32" = "`u32` is 32 bits and unsigned: 0 up to about 4.29 billion, and never negative.", "rust.overflow" = "Going past `u32::MAX` panics in a debug build and wraps in a release build; `checked_add` or `u64` is how you choose deliberately." }
 
 [[blocks]]
 lines = [2, 5]
-ask = "Why must `sum` be `mut`, and what does `1..=limit` produce for the loop to consume?"
+ask = "Why must `sum` be `mut`? What does `1..=limit` give the loop?"
 concepts = ["rust.binding.mut", "rust.range.inclusive", "rust.iterator.for"]
 notes = { "rust.binding.mut" = "`sum` is reassigned on every pass, and a `let` binding without `mut` may not be.", "rust.range.inclusive" = "`1..=limit` includes `limit`; `1..limit` would stop one short and give a different total.", "rust.iterator.for" = "`for` takes anything implementing `IntoIterator` — here a `RangeInclusive<u32>` — and runs the body once per item." }
 
 [[blocks]]
 lines = [6, 7]
-ask = "Why is there no `return` on the last line, and what would a semicolon do?"
+ask = "Why is there no `return` here? What would a semicolon do?"
 concepts = ["rust.return.value"]
 notes = { "rust.return.value" = "`sum` is the tail expression, so it is the function's value. Adding a semicolon turns the body's value into `()`, which would not compile against `-> u32`." }

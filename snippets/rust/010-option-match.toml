@@ -15,18 +15,18 @@ fn describe(count: Option<usize>) -> String {
 
 [[blocks]]
 lines = [1, 1]
-ask = "Read the signature: what can be missing, and what always comes back?"
+ask = "What can be missing here? What always comes back?"
 concepts = ["rust.option.type", "rust.fn.return"]
 notes = { "rust.option.type" = "`Option<usize>` is either `Some(count)` or `None` — the count may not exist, and the type says so.", "rust.fn.return" = "It always returns a `String`; absence is described rather than propagated." }
 
 [[blocks]]
 lines = [2, 5]
-ask = "Why does this match need three arms instead of two?"
+ask = "Why does this `match` need three arms?"
 concepts = ["rust.option.match", "rust.match.arm"]
 notes = { "rust.option.match" = "`Option` has two shapes, but `Some(0)` is a third case worth its own arm.", "rust.match.arm" = "Arms are checked top to bottom, so `Some(0)` must come before the catch-all `Some(n)`." }
 
 [[blocks]]
 lines = [6, 7]
-ask = "Where does the value the caller gets come from?"
+ask = "Where does the returned number come from?"
 concepts = ["rust.return.value"]
 notes = { "rust.return.value" = "The `match` is the tail expression of the body; its value is the function's return value, so no `return` is needed." }

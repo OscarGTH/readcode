@@ -28,18 +28,18 @@ fn main() {
 
 [[blocks]]
 lines = [1, 5]
-ask = "Nobody wrote a `default` here — where does `Counter::default()` come from, and what does it hand back?"
+ask = "Nobody wrote `default`. Where does `Counter::default()` come from?"
 concepts = ["rust.derive", "rust.type.u32"]
 notes = { "rust.derive" = "`#[derive(Default)]` writes `impl Default for Counter` for you, which builds the value with every field at its type's default — `hits: 0`.", "rust.type.u32" = "`u32` is unsigned and 32 bits wide, so `hits` cannot go negative and the struct is exactly that one field." }
 
 [[blocks]]
 lines = [6, 11]
-ask = "What does `&mut self` let `hit` do that a plain `self` would not, and what does it force on the caller?"
+ask = "What can `hit` do with `&mut self` that `self` could not? What does that ask of the caller?"
 concepts = ["rust.impl", "rust.mut_self", "rust.return.bool"]
 notes = { "rust.impl" = "`impl Counter` attaches methods to the type; there is no separate class body, and `Counter::default()` came from an impl too.", "rust.mut_self" = "`&mut self` takes an exclusive borrow, which is the only way a method may write through `self` — and it forces the caller's binding to be `mut`.", "rust.return.bool" = "`self.hits >= 3` is the tail expression, so it is the return value; no `return`, no semicolon." }
 
 [[blocks]]
 lines = [12, 18]
-ask = "The loop calls a `&mut self` method and then reads `counter.hits` in the same iteration. Why is that allowed?"
+ask = "The loop calls `hit` and then reads `counter.hits`. Why is that allowed?"
 concepts = ["rust.binding.mut", "rust.borrow.short"]
 notes = { "rust.binding.mut" = "`hit` needs exclusive access, so `counter` must be declared `mut`; `let counter` would be a compile error.", "rust.borrow.short" = "The exclusive borrow ends when `hit()` returns, so the `println!` on the next line may read `counter.hits` again. Borrows are not held to the end of the loop body." }

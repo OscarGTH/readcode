@@ -17,24 +17,24 @@ fn evens(values: &[i32]) -> Vec<i32> {
 
 [[blocks]]
 lines = [1, 1]
-ask = "What does this signature borrow, and what does it hand back?"
+ask = "What does this function borrow? What does it return?"
 concepts = ["rust.slice", "rust.fn.return"]
 notes = { "rust.slice" = "`&[i32]` borrows a contiguous run of numbers without owning them, so the caller keeps its data.", "rust.fn.return" = "It returns an owned `Vec<i32>`, freshly allocated — the caller becomes its owner." }
 
 [[blocks]]
 lines = [2, 2]
-ask = "Why is `mut` needed here, and what tells the compiler `out` holds `i32`?"
+ask = "Why is `mut` needed? What tells the compiler `out` holds `i32`?"
 concepts = ["rust.binding.mut", "rust.vec.type"]
 notes = { "rust.binding.mut" = "`push` needs exclusive access to `out`, so the binding must be `mut`.", "rust.vec.type" = "`Vec::new()` says nothing about its element type; the first `push` fixes it as `i32`, and only then is the vector a complete type." }
 
 [[blocks]]
 lines = [3, 5]
-ask = "Iterating a `&[i32]` gives references — where does the `*` in `out.push(*value)` come from?"
+ask = "Why is `value` a reference? What is the `*` in `push(*value)` for?"
 concepts = ["rust.iterator.for", "rust.deref"]
 notes = { "rust.iterator.for" = "Iterating a borrowed slice yields `&i32`, not `i32`: you may read the numbers, not take them.", "rust.deref" = "`*value` reads the `i32` behind the reference. That is a copy because `i32` is `Copy`; for a `String` in a borrowed slice it would be a move, and the compiler would reject it." }
 
 [[blocks]]
 lines = [6, 9]
-ask = "What is returned here, and who owns it now?"
+ask = "What is returned here? Who owns it now?"
 concepts = ["rust.return.value", "rust.ownership.return"]
 notes = { "rust.ownership.return" = "`out` is moved out of the function: the Vec's heap buffer is not copied, only its handle is handed over.", "rust.return.value" = "The trailing `out` is the tail expression, so it is the return value; a semicolon would return `()`." }

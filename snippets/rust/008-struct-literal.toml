@@ -19,12 +19,12 @@ fn main() {
 
 [[blocks]]
 lines = [1, 5]
-ask = "`#[derive(Clone, Copy)]` — what changes about assigning a `Point`, and what would happen without it?"
+ask = "What changes when you assign a `Point` here? What would happen without `Copy`?"
 concepts = ["rust.derive.copy"]
 notes = { "rust.derive.copy" = "`Copy` says the value can be duplicated bit for bit, so `let a = p;` copies instead of moving and `p` stays usable. A struct of `f64`s qualifies; one holding a `String` could not derive it." }
 
 [[blocks]]
 lines = [6, 11]
-ask = "What does `..origin` fill in, and why is `origin` still readable on the next line?"
+ask = "What does `..origin` fill in? Why can you still read `origin` afterwards?"
 concepts = ["rust.struct.update", "rust.format.float"]
 notes = { "rust.struct.update" = "`..origin` takes every field not named, from `origin` — a copy here because `Point: Copy`, a move otherwise.", "rust.format.float" = "`{:.1}` prints an `f64` with one decimal place; `{}` would print the shortest form that round-trips." }

@@ -17,30 +17,30 @@ func evens(values []int) []int {
 
 [[blocks]]
 lines = [1, 1]
-ask = "`values []int` and the `[]int` it returns — what does the function actually receive, and what does it hand back?"
+ask = "What does this function receive, and what does it return?"
 concepts = ["go.slice.header"]
 notes = { "go.slice.header" = "A slice is three words: pointer to the data, length and capacity. Passing or returning one copies those three words, not the numbers — both sides still look at the same backing array." }
 
 [[blocks]]
 lines = [2, 2]
-ask = "What is `out` before the loop runs, and is it nil?"
+ask = "What is `out` before the loop runs? Is it nil?"
 concepts = ["go.slice.empty"]
 notes = { "go.slice.empty" = "`[]int{}` is an empty but non-nil slice, so appending to it is fine and `len(out)` is 0." }
 
 [[blocks]]
 lines = [3, 3]
-ask = "What are the two values `range` gives, and why is one of them `_`?"
+ask = "What two values does `range` give? Why is one of them `_`?"
 concepts = ["go.range", "go.blank"]
 notes = { "go.range" = "Over a slice, `range` yields the index and a copy of the element.", "go.blank" = "`_` discards the index; Go refuses unused variables, so a name you do not need must be the blank identifier." }
 
 [[blocks]]
 lines = [4, 6]
-ask = "What does `append` return, and why must the result be assigned back?"
+ask = "What does `append` return? Why assign it back?"
 concepts = ["go.append"]
 notes = { "go.append" = "`append` returns a slice — usually the same backing array, but a new one when it must grow — so the result has to be reassigned." }
 
 [[blocks]]
 lines = [7, 9]
-ask = "The caller now holds `out` too — can it change what you built?"
+ask = "The caller has `out` too. Can it change what you built?"
 concepts = ["go.slice.header"]
 notes = { "go.slice.header" = "Yes, until `append` reallocates: the returned header points at the same array, so writing through either slice is visible in the other. `append` past the capacity is what quietly breaks the sharing." }

@@ -14,24 +14,24 @@ func label(n int) string {
 
 [[blocks]]
 lines = [1, 1]
-ask = "Where does Go put the return type, and how would this signature look if it returned two things?"
+ask = "Where does Go put the return type? How would this look with two results?"
 concepts = ["go.func.return"]
 notes = { "go.func.return" = "Parameters first, then the result — the opposite order to C or Rust. Two results would be written `(int, error)`, and both names and types would still come before the brace." }
 
 [[blocks]]
 lines = [2, 4]
-ask = "When does the return on line 3 run, and what does it leave behind?"
+ask = "When does the `return` on line 3 run? What code does it skip?"
 concepts = ["go.return.early"]
 notes = { "go.return.early" = "`return` leaves the function immediately; the `if` has no braces-with-else here, so the even case never reaches line 5." }
 
 [[blocks]]
 lines = [5, 5]
-ask = "Why is there a return here at all, when one path already returned?"
+ask = "Why is there a second `return` here?"
 concepts = ["go.return.early"]
 notes = { "go.return.early" = "The `if` covers only the even case; the odd case falls through to this line, which is the only return it ever executes." }
 
 [[blocks]]
 lines = [6, 6]
-ask = "Delete the last `return` — what does the compiler say, and why can it tell?"
+ask = "Delete the last `return`. What does the compiler say?"
 concepts = ["go.return.all.paths"]
 notes = { "go.return.all.paths" = "Go type-checks every path: a function with a result must end in a terminating statement, so a missing return is a compile error rather than a returned zero value." }

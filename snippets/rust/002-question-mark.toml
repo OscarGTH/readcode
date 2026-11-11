@@ -23,18 +23,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 [[blocks]]
 lines = [1, 3]
-ask = "What does `Box<dyn Error>` let this signature promise about failure?"
+ask = "What does `Box<dyn Error>` let this function return?"
 concepts = ["rust.dyn.dispatch", "rust.error.dynamic"]
 notes = { "rust.dyn.dispatch" = "`dyn` means dynamic dispatch: the value is a fat pointer to the error plus a vtable, so the call to `Display`/`Debug` is resolved at run time rather than compiled in. That is what lets one return type hold any error.", "rust.error.dynamic" = "`Box<dyn Error>` puts that behind a `Box`, because a `dyn` value has no size known at compile time. An `io::Error` and a `ParseIntError` both fit." }
 
 [[blocks]]
 lines = [4, 7]
-ask = "When `read_to_string` fails, what does the `?` hand back, and to whom?"
+ask = "When `read_to_string` fails, what does `?` do?"
 concepts = ["rust.question_mark", "rust.error.from", "rust.borrow.str_param", "rust.result.ok"]
 notes = { "rust.question_mark" = "`?` matches: `Ok` unwraps and continues, `Err` returns from the function — it is a `match`, not a panic.", "rust.error.from" = "`?` also calls `From::from` on the error, which is where `io::Error` becomes `Box<dyn Error>`.", "rust.borrow.str_param" = "`&str` is a borrowed view of text the caller owns: no allocation and no transfer of ownership.", "rust.result.ok" = "`Ok(port)` wraps the parsed number in `Ok` so the return type is satisfied." }
 
 [[blocks]]
 lines = [8, 13]
-ask = "What does returning `Result` from `main` give the shell when this fails?"
+ask = "What does the shell get when `main` returns an `Err`?"
 concepts = ["rust.main.result", "rust.question_mark", "rust.return.ok", "rust.exit.code"]
 notes = { "rust.main.result" = "`main` may return `Result<(), E>`: the `Termination` trait turns it into an exit status.", "rust.question_mark" = "The second `?` propagates a failure from `read_port` out of `main` instead of handling it here.", "rust.return.ok" = "`Ok(())` is the success value of `Result<(), _>`: a unit value meaning 'no data'.", "rust.exit.code" = "An `Err` escaping `main` prints the error's `Debug` to stderr and exits with a failure status." }

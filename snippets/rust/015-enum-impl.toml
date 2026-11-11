@@ -21,24 +21,24 @@ impl Shape {
 
 [[blocks]]
 lines = [1, 5]
-ask = "What is one `Shape` value, and what does each variant carry?"
+ask = "What is one `Shape` value? What does each variant carry?"
 concepts = ["rust.enum.define", "rust.enum.payload"]
 notes = { "rust.enum.define" = "`Shape` is one type with two forms; a value is exactly one of them.", "rust.enum.payload" = "Each variant holds the number it needs: a radius or a side." }
 
 [[blocks]]
 lines = [6, 8]
-ask = "What does `&self` let this method do, and what does it promise back?"
+ask = "What does `&self` let this method do? What does it return?"
 concepts = ["rust.impl", "rust.ref_self"]
 notes = { "rust.impl" = "`impl Shape` attaches the method to the type, so `shape.area()` works.", "rust.ref_self" = "`&self` is a shared borrow: the caller keeps ownership, no `mut` is needed anywhere, and inside the method the value may be read but not written. `&mut self` would be the writing version." }
 
 [[blocks]]
 lines = [9, 12]
-ask = "How does the match know which variant it has, and why are two arms enough?"
+ask = "How does the `match` know which variant it has? Why are two arms enough?"
 concepts = ["rust.match.arm", "rust.enum.payload"]
 notes = { "rust.match.arm" = "Each arm names a variant and binds its payload; the compiler requires every variant.", "rust.enum.payload" = "The bound name (`radius`, `side`) is a reference to the payload, usable directly in the arithmetic." }
 
 [[blocks]]
 lines = [13, 13]
-ask = "Where does the number the caller receives come from?"
+ask = "Where does the returned number come from?"
 concepts = ["rust.match.arm", "rust.return.value"]
 notes = { "rust.return.value" = "The `match` is the tail expression of the method, so its value is returned.", "rust.match.arm" = "Only the matching arm runs; the other is never evaluated." }

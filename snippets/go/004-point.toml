@@ -17,18 +17,18 @@ func (p Point) Dist() float64 {
 
 [[blocks]]
 lines = [1, 2]
-ask = "What does importing `math` give the package, and what is the name it is used by?"
+ask = "What does `import \"math\"` give you, and under what name?"
 concepts = ["go.import"]
 notes = { "go.import" = "`import \"math\"` binds the package under the last element of its path, so the body calls `math.Sqrt`. An import that is never used will not compile." }
 
 [[blocks]]
 lines = [3, 6]
-ask = "How many fields does `Point` have, and what does the capital letter on `X` decide?"
+ask = "How many fields does `Point` have? What does the capital `X` decide?"
 concepts = ["go.struct.fields", "go.export.capital"]
 notes = { "go.struct.fields" = "`X, Y float64` declares two `float64` fields in one line; the struct is a value type, so assigning a `Point` copies both numbers.", "go.export.capital" = "Capitalisation is the access rule in Go: `X` and `Y` are exported and visible outside the package, `x` and `y` would be private to it. There is no `pub`." }
 
 [[blocks]]
 lines = [7, 9]
-ask = "What does `(p Point)` do, and what does it mean for the value the caller passes in?"
+ask = "What does `(p Point)` do? What does the caller's value look like inside?"
 concepts = ["go.method.receiver", "go.value.semantics"]
 notes = { "go.method.receiver" = "The bracketed name before the function is the receiver: it is what makes `Dist` a method on `Point`, called as `p.Dist()`.", "go.value.semantics" = "A value receiver gets a copy of the struct, so a method cannot change the caller's `Point` this way. `(p *Point)` would share it — that is the choice a Go author makes per method." }

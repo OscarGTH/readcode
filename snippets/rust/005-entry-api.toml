@@ -19,29 +19,29 @@ fn count_words(text: &str) -> HashMap<&str, usize> {
 
 [[blocks]]
 lines = [1, 2]
-ask = "Why does this file need a `use` for `HashMap`, when `String` and `Vec` need none?"
+ask = "Why does `HashMap` need a `use` here, but `String` and `Vec` do not?"
 concepts = ["rust.use.prelude"]
 notes = { "rust.use.prelude" = "The prelude is the small set of names every Rust file gets for free — `String`, `Vec`, `Option`, `Result`. `HashMap` is not in it, so it has to be named explicitly." }
   [[blocks.line]]
   at = 1
-  ask = "Why does this file need a `use` for `HashMap`, when `String` and `Vec` need none?"
+  ask = "Why does `HashMap` need a `use` here, but `String` and `Vec` do not?"
   concepts = ["rust.use.prelude"]
   notes = { "rust.use.prelude" = "`String` and `Vec` come from the prelude; `HashMap` does not, so the file has to import it by hand." }
 
 [[blocks]]
 lines = [3, 3]
-ask = "What does this signature promise, and where does the key's lifetime come from?"
+ask = "What does this signature return? Where does the key's lifetime come from?"
 concepts = ["rust.fn.return", "rust.lifetime.elision"]
 notes = { "rust.fn.return" = "It returns a map from a word to how many times it appeared; `usize` is the count.", "rust.lifetime.elision" = "The returned `&str` keys borrow from `text`, so the map cannot outlive the input; the lifetime is elided, not absent." }
   [[blocks.line]]
   at = 3
-  ask = "Where does the lifetime of the returned map come from — and what breaks if `text` is dropped?"
+  ask = "Where does the returned map's lifetime come from? What breaks if `text` is dropped?"
   concepts = ["rust.lifetime.elision"]
   notes = { "rust.lifetime.elision" = "The compiler gives the returned map the same lifetime as `text`, so using it after `text` dies is a compile error." }
 
 [[blocks]]
 lines = [4, 5]
-ask = "Why is `counts` mutable, and what does the `for` loop iterate over?"
+ask = "Why must `counts` be mutable? What does the loop iterate over?"
 concepts = ["rust.binding.mut", "rust.iterator.for"]
 notes = { "rust.binding.mut" = "`mut` is required because the loop inserts into the map; without it every `insert` would be a compile error.", "rust.iterator.for" = "`for` drives an iterator: `split_whitespace()` yields each word as a `&str` slice of `text`." }
   [[blocks.line]]
@@ -51,24 +51,24 @@ notes = { "rust.binding.mut" = "`mut` is required because the loop inserts into 
   notes = { "rust.binding.mut" = "`mut` is required because the loop calls `insert`; an immutable binding would be a compile error." }
   [[blocks.line]]
   at = 5
-  ask = "What does the `for` loop iterate over, and where do the words come from?"
+  ask = "What does the loop iterate over? Where do the words come from?"
   concepts = ["rust.iterator.for"]
   notes = { "rust.iterator.for" = "`for` drives an iterator; `split_whitespace()` yields each word as a `&str` slice of `text`." }
 
 [[blocks]]
 lines = [6, 7]
-ask = "Unpack `*counts.entry(word).or_insert(0) += 1;` — what does each part do?"
+ask = "Break this line down. What does each part do?"
 concepts = ["rust.hashmap.entry", "rust.deref.assign"]
 notes = { "rust.hashmap.entry" = "`entry(word)` looks the key up once; `or_insert(0)` inserts a default 0 when it is absent and returns a slot either way.", "rust.deref.assign" = "`or_insert` hands back `&mut usize`; the `*` dereferences it so `+= 1` writes the count, not the reference." }
   [[blocks.line]]
   at = 6
-  ask = "Unpack this line: the `*`, the `entry`, and the `or_insert`."
+  ask = "What do the `*`, `entry` and `or_insert` do here?"
   concepts = ["rust.hashmap.entry", "rust.deref.assign"]
   notes = { "rust.hashmap.entry" = "`entry(word)` looks the key up once; `or_insert(0)` inserts a default 0 when the key is absent and hands back the slot either way.", "rust.deref.assign" = "`or_insert` returns a `&mut usize`; the `*` reaches the integer behind it, so `+= 1` writes the count. Without the `*` you would be assigning to a reference." }
 
 [[blocks]]
 lines = [8, 9]
-ask = "What is returned here, and why is there no `return` keyword?"
+ask = "What does this line return? Why is there no `return`?"
 concepts = ["rust.return.value"]
 notes = { "rust.return.value" = "`counts` is the tail expression: the value is moved out as the return value, which is why it has no semicolon." }
   [[blocks.line]]

@@ -23,18 +23,18 @@ fn errors(lines: &[LogLine]) -> Vec<String> {
 
 [[blocks]]
 lines = [1, 6]
-ask = "Why is `level` a `&'static str` while `message` is a `String`?"
+ask = "Why is `level` a `&'static str` and `message` a `String`?"
 concepts = ["rust.derive", "rust.lifetime.static", "rust.heap.string"]
 notes = { "rust.derive" = "`#[derive(Debug)]` generates `impl Debug for LogLine`, which is what `{:?}` needs.", "rust.heap.string" = "`String` owns a heap buffer that can grow, which is what a message built at run time needs — and why this struct cannot be `Copy`.", "rust.lifetime.static" = "`&'static str` borrows text that lives for the whole program — string literals are exactly that; `String` is owned instead, because the message is built at runtime." }
 
 [[blocks]]
 lines = [7, 10]
-ask = "What does `filter` hand to `map`, and when does it hand it over?"
+ask = "What does `filter` pass to `map`? When?"
 concepts = ["rust.slice", "rust.iterator.lazy", "rust.closure"]
 notes = { "rust.slice" = "`&[LogLine]` is a borrowed view of a contiguous run of records: no copy, no ownership transfer, and it works with arrays and `Vec`s alike.", "rust.iterator.lazy" = "Adaptors are lazy: nothing is filtered or mapped until a consumer (`collect`) drives the iterator.", "rust.closure" = "`|line| ...` is an anonymous function; here it borrows `level` and `message` through `line`." }
 
 [[blocks]]
 lines = [11, 13]
-ask = "What type does `collect` build here, and what does that force `map` to produce?"
+ask = "What does `collect` build here? What must `map` produce for it?"
 concepts = ["rust.iterator.adaptor", "rust.collect", "rust.ownership.clone"]
 notes = { "rust.iterator.adaptor" = "`map` transforms each surviving element; `filter` and `map` are adaptors that return a new iterator, not a collection.", "rust.collect" = "`collect` consumes the iterator into a collection; here the return type `Vec<String>` tells it what to build.", "rust.ownership.clone" = "`lines` is borrowed, so the `String` inside cannot be moved out — `clone` allocates a new owned `String` per kept line." }
