@@ -91,7 +91,7 @@ fn fake_reviewer(dir: &std::path::Path, model: Option<&str>) -> (AcpReviewer, st
 
 fn grade_once(reviewer: &AcpReviewer) {
     let corpus = Corpus::builtin().unwrap();
-    let snippet = corpus.find("006").unwrap();
+    let snippet = corpus.find("rust-006").unwrap();
     let prompts = snippet.prompts(Asks::Blocks);
     let annotations: Vec<Annotation> = prompts
         .iter()

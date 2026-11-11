@@ -255,6 +255,133 @@ const TABLE: &[(&str, &str, &str)] = &[
         "String::push_str",
         "https://doc.rust-lang.org/std/string/struct.String.html#method.push_str",
     ),
+    // Go. Same rule as above: the longest prefix wins, so a specific concept
+    // gets a specific page and the rest fall back to the language's own docs.
+    (
+        "go.package.main",
+        "The Go Tour — Packages",
+        "https://go.dev/tour/basics/1",
+    ),
+    (
+        "go.import",
+        "The Go Tour — Imports",
+        "https://go.dev/tour/basics/2",
+    ),
+    (
+        "go.short_var",
+        "The Go Tour — Short variable declarations",
+        "https://go.dev/tour/basics/10",
+    ),
+    (
+        "go.fmt.println",
+        "pkg.go.dev — fmt.Println",
+        "https://pkg.go.dev/fmt#Println",
+    ),
+    (
+        "go.fmt.errorf",
+        "pkg.go.dev — fmt.Errorf",
+        "https://pkg.go.dev/fmt#Errorf",
+    ),
+    (
+        "go.func.signature",
+        "The Go Tour — Functions",
+        "https://go.dev/tour/basics/4",
+    ),
+    (
+        "go.if",
+        "The Go Tour — If",
+        "https://go.dev/tour/flowcontrol/5",
+    ),
+    (
+        "go.return.early",
+        "Effective Go — Control structures",
+        "https://go.dev/doc/effective_go#control-structures",
+    ),
+    (
+        "go.slice",
+        "The Go Tour — Slices",
+        "https://go.dev/tour/moretypes/7",
+    ),
+    (
+        "go.range",
+        "The Go Tour — Range",
+        "https://go.dev/tour/moretypes/16",
+    ),
+    (
+        "go.blank",
+        "Effective Go — The blank identifier",
+        "https://go.dev/doc/effective_go#blank",
+    ),
+    (
+        "go.append",
+        "The Go Tour — Appending to a slice",
+        "https://go.dev/tour/moretypes/15",
+    ),
+    (
+        "go.struct",
+        "The Go Tour — Structs",
+        "https://go.dev/tour/moretypes/2",
+    ),
+    (
+        "go.method.receiver",
+        "The Go Tour — Methods",
+        "https://go.dev/tour/methods/1",
+    ),
+    (
+        "go.value.semantics",
+        "Effective Go — Pointers vs. Values",
+        "https://go.dev/doc/effective_go#pointers_vs_values",
+    ),
+    (
+        "go.map.make",
+        "Effective Go — Allocation with make",
+        "https://go.dev/doc/effective_go#allocation_make",
+    ),
+    (
+        "go.map.index",
+        "The Go Spec — Index expressions",
+        "https://go.dev/ref/spec#Index_expressions",
+    ),
+    (
+        "go.map.reference",
+        "The Go Blog — Go maps in action",
+        "https://go.dev/blog/maps",
+    ),
+    (
+        "go.map",
+        "The Go Tour — Maps",
+        "https://go.dev/tour/moretypes/19",
+    ),
+    (
+        "go.zero.value",
+        "The Go Spec — The zero value",
+        "https://go.dev/ref/spec#The_zero_value",
+    ),
+    (
+        "go.multi.return",
+        "The Go Tour — Multiple return values",
+        "https://go.dev/tour/basics/6",
+    ),
+    (
+        "go.error.wrap",
+        "The Go Blog — Working with Errors in Go 1.13",
+        "https://go.dev/blog/go1.13-errors",
+    ),
+    (
+        "go.error.interface",
+        "The Go Blog — Error handling and Go",
+        "https://go.dev/blog/error-handling-and-go",
+    ),
+    (
+        "go.err.check",
+        "Effective Go — Errors",
+        "https://go.dev/doc/effective_go#errors",
+    ),
+    (
+        "go.nil.error",
+        "The Go Blog — Error handling and Go",
+        "https://go.dev/blog/error-handling-and-go",
+    ),
 ];
 
 /// The best page for one concept, if the table knows the namespace.

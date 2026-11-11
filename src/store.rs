@@ -35,10 +35,18 @@ pub struct Progress {
     pub updated_at: u64,
     #[serde(default)]
     pub sessions: u32,
-    /// The learner's declared level, 1..=5. Unset until they say, which keeps
-    /// the picker unfiltered for anyone who never answers the question.
+    /// The learner's level, from before the corpus had more than one language.
+    /// Still written and read as the level for `rust` when `levels` is empty.
     #[serde(default)]
     pub level: Option<u8>,
+    /// The language being studied right now. `None` means "not chosen yet", which
+    /// is also what a file written before languages existed looks like.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Declared level per language: `{"rust": 2, "go": 1}`. Progress in one
+    /// language must not decide what another one offers.
+    #[serde(default)]
+    pub levels: BTreeMap<String, u8>,
     /// The snippet shown last, so the next pick can be a different one.
     #[serde(default)]
     pub last_snippet: Option<String>,
@@ -66,6 +74,8 @@ impl Default for Progress {
             updated_at: 0,
             sessions: 0,
             level: None,
+            language: None,
+            levels: BTreeMap::new(),
             last_snippet: None,
             seen_snippets: Vec::new(),
             last_modes: BTreeMap::new(),
@@ -120,6 +130,27 @@ impl Progress {
 
     pub fn last_mode(&self, snippet_id: &str) -> Option<Asks> {
         self.last_modes.get(snippet_id).copied()
+    }
+
+    /// The level for one language, falling back to the single field an older
+    /// file has (it was written when Rust was the only corpus).
+    pub fn level_of(&self, language: &str) -> Option<u8> {
+        self.levels.get(language).copied().or_else(|| {
+            if self.levels.is_empty() && language == "rust" {
+                self.level
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn set_level(&mut self, language: &str, level: u8) {
+        self.levels.insert(language.to_string(), level);
+    }
+
+    /// The language in play, defaulting to the only one the corpus has.
+    pub fn active_language(&self) -> Option<&str> {
+        self.language.as_deref()
     }
 
     pub fn seen(&self, snippet_id: &str) -> bool {

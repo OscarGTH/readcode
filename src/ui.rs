@@ -68,7 +68,7 @@ impl Style {
 /// The snippet's source, syntax-highlighted once so every view shares it.
 fn highlighted(snippet: &Snippet, style: Style) -> Vec<String> {
     let lines = snippet.code_lines();
-    crate::highlight::highlight(&lines, style)
+    crate::highlight::highlight(&snippet.language, &lines, style)
 }
 
 pub fn verdict_label(style: Style, verdict: Verdict) -> String {
@@ -204,7 +204,7 @@ pub fn print_line_prompt(
     let first = number.saturating_sub(WINDOW).max(1);
     let last = (number + WINDOW).min(snippet.line_count());
     let lines = snippet.code_lines();
-    let painted = crate::highlight::highlight(&lines[first - 1..last], style);
+    let painted = crate::highlight::highlight(&snippet.language, &lines[first - 1..last], style);
     let width = gutter_width(snippet);
 
     for (offset, code) in painted.iter().enumerate() {
@@ -248,7 +248,7 @@ pub fn print_annotated(
         style.bold(&format!("annotated · {}", snippet.id))
     )?;
     let lines = snippet.code_lines();
-    let painted = crate::highlight::highlight(&lines, style);
+    let painted = crate::highlight::highlight(&snippet.language, &lines, style);
     let width = gutter_width(snippet);
 
     for (index, code) in painted.iter().enumerate() {
@@ -362,6 +362,10 @@ pub struct LevelProgress {
 /// Everything `readcode status` needs to answer "where am I, and what needs work".
 /// Built by the caller, which is the only place that has both corpus and progress.
 pub struct ProgressView<'a> {
+    /// The language this view is about.
+    pub language: String,
+    /// Other languages in the corpus, with how much of each is seen.
+    pub others: Vec<(String, usize, usize)>,
     pub level: Option<u8>,
     pub level_name: &'a str,
     pub ladder: Vec<LevelProgress>,
@@ -379,16 +383,23 @@ pub fn print_progress(
     style: Style,
     view: &ProgressView<'_>,
 ) -> io::Result<()> {
+    let where_ = if view.language.is_empty() {
+        String::new()
+    } else {
+        format!("{} · ", view.language)
+    };
     match view.level {
         Some(level) => writeln!(
             out,
             "{}",
-            style.bold(&format!("level {level} · {}", view.level_name))
+            style.bold(&format!("{where_}level {level} · {}", view.level_name))
         )?,
         None => writeln!(
             out,
             "{}",
-            style.dim("no level set — `readcode level <1-5>` or just run `readcode`")
+            style.dim(&format!(
+                "{where_}no level set — `readcode level <1-5>` or just run `readcode`"
+            ))
         )?,
     }
 
@@ -456,6 +467,7 @@ pub fn print_progress(
             "{}",
             style.dim("nothing needs work: every concept you have met is solid")
         )?;
+        print_others(out, style, view)?;
         return Ok(());
     }
 
@@ -480,7 +492,30 @@ pub fn print_progress(
             style.dim(&format!("and {} more", view.needs_work.len() - SHOWN))
         )?;
     }
+    print_others(out, style, view)?;
     Ok(())
+}
+
+/// The other languages in the corpus, so a second one is discoverable rather
+/// than something you have to remember exists.
+fn print_others(out: &mut dyn Write, style: Style, view: &ProgressView<'_>) -> io::Result<()> {
+    if view.others.is_empty() {
+        return Ok(());
+    }
+    writeln!(out)?;
+    let listed: Vec<String> = view
+        .others
+        .iter()
+        .map(|(language, seen, total)| format!("{language} {seen}/{total}"))
+        .collect();
+    writeln!(
+        out,
+        "  {}",
+        style.dim(&format!(
+            "other languages · {} — `readcode lang <name>` switches",
+            listed.join(" · ")
+        ))
+    )
 }
 
 pub fn order_for_status(states: Vec<ConceptState>, now: u64) -> Vec<ConceptState> {
@@ -557,6 +592,8 @@ mod tests {
 
     fn view(needs_work: Vec<ConceptState>) -> ProgressView<'static> {
         ProgressView {
+            language: "rust".to_string(),
+            others: Vec::new(),
             level: Some(2),
             level_name: "small functions",
             ladder: vec![
@@ -625,6 +662,8 @@ mod tests {
     #[test]
     fn a_fresh_profile_is_told_what_to_do() {
         let fresh = ProgressView {
+            language: "rust".to_string(),
+            others: vec![("go".to_string(), 0, 6)],
             level: Some(1),
             level_name: "just started",
             ladder: vec![LevelProgress {
@@ -713,7 +752,7 @@ mod tests {
 
     fn line_fixture() -> (crate::snippet::Snippet, Vec<Prompt>) {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let prompts = snippet.prompts(Asks::Lines);
         (snippet, prompts)
     }
@@ -804,7 +843,7 @@ mod tests {
     #[test]
     fn the_whole_snippet_is_shown_with_block_boundaries() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("003").unwrap();
+        let snippet = corpus.find("rust-003").unwrap();
         let mut out: Vec<u8> = Vec::new();
         print_code(&mut out, Style::new(false), snippet).unwrap();
         let text = String::from_utf8(out).unwrap();

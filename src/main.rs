@@ -8,7 +8,7 @@ use readcode::corpus::Corpus;
 use readcode::review::{Reviewer, acp::AcpReviewer, api::ApiReviewer};
 use readcode::session;
 use readcode::snippet::Asks;
-use readcode::srs::{self, ConceptState};
+use readcode::srs;
 use readcode::store::{self, Progress};
 use readcode::ui::{self, Style};
 
@@ -57,6 +57,10 @@ struct Cli {
     /// Use the plain line-by-line view instead of the full-screen one.
     #[arg(long, global = true)]
     no_tui: bool,
+
+    /// The language to study (the corpus may carry several).
+    #[arg(long, global = true, value_name = "LANG")]
+    language: Option<String>,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -134,6 +138,11 @@ enum Command {
         #[arg(long)]
         write: bool,
     },
+    /// Show or switch the language you are reading in.
+    Lang {
+        /// The language to switch to, e.g. `go`. Omit to see them all.
+        language: Option<String>,
+    },
     /// Show or set the level you are reading at (1 = just started, 5 = fluent).
     Level {
         /// The new level, 1 to 5. Omit to see the current one.
@@ -149,101 +158,6 @@ enum Command {
 
 /// The numbers behind `readcode status`, gathered where both the corpus and the
 /// progress are in hand.
-fn progress_view<'a>(corpus: &Corpus, progress: &Progress, now: u64) -> ui::ProgressView<'a> {
-    use std::collections::BTreeSet;
-
-    let level = progress.level;
-    let mut at_level: BTreeSet<String> = BTreeSet::new();
-    let mut new_at_level = 0usize;
-    for snippet in corpus.snippets() {
-        let in_level = level.is_none_or(|level| snippet.levels().from <= level);
-        if !in_level {
-            continue;
-        }
-        at_level.extend(snippet.concepts());
-        if !progress.seen(&snippet.id) {
-            new_at_level += 1;
-        }
-    }
-
-    // One row per rung that has content, so the ladder shows the way up.
-    let mut ladder: Vec<ui::LevelProgress> = Vec::new();
-    for rung in 1..=readcode::snippet::MAX_LEVEL {
-        let concepts: BTreeSet<String> = corpus
-            .snippets()
-            .iter()
-            .filter(|snippet| snippet.levels().from == rung)
-            .flat_map(|snippet| snippet.concepts())
-            .collect();
-        if concepts.is_empty() {
-            continue;
-        }
-        let strength: f64 = concepts
-            .iter()
-            .map(|concept| {
-                progress
-                    .concepts
-                    .get(concept)
-                    .map(|state| state.strength)
-                    .unwrap_or(0.0)
-            })
-            .sum();
-        let solid = concepts
-            .iter()
-            .filter(|concept| {
-                progress
-                    .concepts
-                    .get(*concept)
-                    .is_some_and(|state| state.is_mastered())
-            })
-            .count();
-        ladder.push(ui::LevelProgress {
-            level: rung,
-            strength: if concepts.is_empty() {
-                0.0
-            } else {
-                strength / concepts.len() as f64
-            },
-            solid,
-            total: concepts.len(),
-        });
-    }
-
-    let mut needs_work: Vec<ConceptState> = progress
-        .concepts
-        .values()
-        .filter(|state| !state.is_mastered())
-        .cloned()
-        .collect();
-    needs_work.sort_by(|a, b| b.urgency(now).total_cmp(&a.urgency(now)));
-
-    ui::ProgressView {
-        level,
-        level_name: level
-            .map(|level| readcode::snippet::LEVELS[level as usize - 1])
-            .unwrap_or(""),
-        ladder,
-        snippets_seen: progress.seen_snippets.len(),
-        snippets_total: corpus.snippets().len(),
-        new_at_level,
-        started: progress
-            .concepts
-            .values()
-            .filter(|state| state.reps > 0)
-            .count(),
-        solid: progress
-            .concepts
-            .values()
-            .filter(|state| state.is_mastered())
-            .count(),
-        untouched: at_level
-            .iter()
-            .filter(|concept| !progress.concepts.contains_key(*concept))
-            .count(),
-        needs_work,
-    }
-}
-
 /// `--lines 12-24` (or `--lines 12`) as a 1-based slice of a file.
 fn slice_lines(source: &str, span: &str) -> Result<String> {
     let (start, end) = match span.split_once('-') {
@@ -284,19 +198,57 @@ fn main() -> Result<()> {
             let mut input = io::stdin().lock();
             let mut out = io::stdout();
 
-            // The level decides what the picker may offer, so it is settled
-            // before the first snippet is chosen. Naming a snippet yourself
-            // answers the question the level would have answered.
-            if progress.level.is_none() && cli.snippet.is_none() {
+            // Language first — it decides which snippets and which level apply —
+            // then that language's level.
+            let languages = corpus.languages();
+            if let Some(language) = &cli.language {
+                if !languages.contains(language) {
+                    bail!(
+                        "the corpus has no `{language}` — it has: {}",
+                        languages.join(", ")
+                    );
+                }
+                progress.language = Some(language.clone());
+                progress.save(&progress_path)?;
+            } else if progress.language.is_none() {
+                if languages.len() > 1 && cli.snippet.is_none() {
+                    let mut term = session::Terminal {
+                        input: &mut input,
+                        out: &mut out,
+                        style,
+                    };
+                    let language = session::ask_language(&mut term, &languages)?;
+                    progress.language = Some(language);
+                } else if let Some(only) = languages.first() {
+                    progress.language = Some(only.clone());
+                }
+                progress.save(&progress_path)?;
+            }
+
+            let active = progress.language.clone();
+            let needs_level = match &active {
+                Some(language) => progress.level_of(language).is_none(),
+                None => progress.level.is_none(),
+            };
+            if needs_level && cli.snippet.is_none() {
                 let level = {
                     let mut term = session::Terminal {
                         input: &mut input,
                         out: &mut out,
                         style,
                     };
-                    session::ask_level(&mut term)?
+                    session::ask_level(
+                        &mut term,
+                        active
+                            .as_deref()
+                            .or(corpus.languages().first().map(String::as_str))
+                            .unwrap_or("rust"),
+                    )?
                 };
-                progress.level = Some(level);
+                match &active {
+                    Some(language) => progress.set_level(language, level),
+                    None => progress.level = Some(level),
+                }
                 progress.save(&progress_path)?;
             }
 
@@ -351,7 +303,7 @@ fn main() -> Result<()> {
             };
             if outcome.is_some() {
                 progress.save(&progress_path)?;
-                let view = progress_view(&corpus, &progress, now);
+                let view = session::progress_view(&corpus, &progress, now);
                 if let Some(rung) = view
                     .ladder
                     .iter()
@@ -432,7 +384,10 @@ fn main() -> Result<()> {
             let toml = readcode::draft::from_reply(&reply, &id, &language, Some(level))?;
 
             if write {
-                let root = out.unwrap_or_else(|| PathBuf::from("snippets"));
+                // `draft` knows the language from the extension, so a Go file
+                // lands in `snippets/go` beside the Rust ones rather than in the
+                // root of the corpus.
+                let root = out.unwrap_or_else(|| PathBuf::from("snippets").join(&language));
                 // TOML ignores the leading comment, so the draft parses as-is.
                 let title = toml::from_str::<toml::Value>(&toml)
                     .ok()
@@ -472,6 +427,77 @@ fn main() -> Result<()> {
             Ok(())
         }
 
+        Command::Lang { language } => {
+            let mut out = io::stdout();
+            let languages = corpus.languages();
+            match language {
+                Some(language) => {
+                    let language = language.to_lowercase();
+                    if !languages.contains(&language) {
+                        bail!(
+                            "the corpus has no `{language}` — it has: {}",
+                            languages.join(", ")
+                        );
+                    }
+                    progress.language = Some(language.clone());
+                    progress.save(&progress_path)?;
+                    writeln!(out, "{}", style.bold(&format!("reading {language}")))?;
+                    match progress.level_of(&language) {
+                        Some(level) => writeln!(
+                            out,
+                            "{}",
+                            style.dim(&format!(
+                                "level {level} · {}",
+                                readcode::snippet::LEVELS[level as usize - 1]
+                            ))
+                        )?,
+                        None => writeln!(
+                            out,
+                            "{}",
+                            style.dim("no level for this language yet — `readcode` will ask")
+                        )?,
+                    }
+                }
+                None => {
+                    writeln!(out, "{}", style.bold("languages"))?;
+                    for language in &languages {
+                        let all: Vec<&readcode::snippet::Snippet> = corpus
+                            .snippets()
+                            .iter()
+                            .filter(|snippet| &snippet.language == language)
+                            .collect();
+                        let seen = all
+                            .iter()
+                            .filter(|snippet| progress.seen(&snippet.id))
+                            .count();
+                        let here = progress.active_language() == Some(language.as_str());
+                        writeln!(
+                            out,
+                            "  {} {:<10} {} of {} snippets seen · {}",
+                            if here {
+                                style.cyan("→")
+                            } else {
+                                " ".to_string()
+                            },
+                            language,
+                            seen,
+                            all.len(),
+                            match progress.level_of(language) {
+                                Some(level) => format!("level {level}"),
+                                None => "no level yet".to_string(),
+                            }
+                        )?;
+                    }
+                    writeln!(
+                        out,
+                        "{}",
+                        style.dim("`readcode lang <name>` switches; each keeps its own progress")
+                    )?;
+                }
+            }
+            Ok(())
+        }
+
         Command::Level { level } => {
             let mut out = io::stdout();
             match level {
@@ -482,7 +508,10 @@ fn main() -> Result<()> {
                             readcode::snippet::MAX_LEVEL
                         );
                     }
-                    progress.level = Some(level);
+                    match progress.active_language().map(str::to_string) {
+                        Some(language) => progress.set_level(&language, level),
+                        None => progress.level = Some(level),
+                    }
                     progress.save(&progress_path)?;
                     writeln!(
                         out,
@@ -537,7 +566,7 @@ fn main() -> Result<()> {
 
         Command::Status => {
             let mut out = io::stdout();
-            let view = progress_view(&corpus, &progress, now);
+            let view = session::progress_view(&corpus, &progress, now);
             ui::print_progress(&mut out, style, &view)?;
             if let Some(advice) = session::level_advice(&corpus, &progress) {
                 writeln!(out)?;

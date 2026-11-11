@@ -1,0 +1,37 @@
+id = "go-002"
+language = "go"
+title = "One decision, two returns"
+level = 1
+intro = "A function that returns different text depending on the number it is given."
+code = '''
+func label(n int) string {
+	if n%2 == 0 {
+		return "even"
+	}
+	return "odd"
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "Read the signature: what goes in, and what comes back?"
+concepts = ["go.func.signature"]
+notes = { "go.func.signature" = "It takes an `int` and returns a `string`; the return type comes after the parameter list." }
+
+[[blocks]]
+lines = [2, 4]
+ask = "When does the first return run, and what happens to the code below it?"
+concepts = ["go.if", "go.return.early"]
+notes = { "go.if" = "`if` takes no parentheses in Go, and the condition must be a bool.", "go.return.early" = "A `return` inside the `if` leaves the function immediately, so the last line never runs in that case." }
+
+[[blocks]]
+lines = [5, 5]
+ask = "Why is there a return after the if, when one branch already returned?"
+concepts = ["go.return.early"]
+notes = { "go.return.early" = "The `if` only covers the even case; the odd case falls through to this line, and Go requires every path to return." }
+
+[[blocks]]
+lines = [6, 6]
+ask = "What does the compiler check about the paths through this function?"
+concepts = ["go.func.signature"]
+notes = { "go.func.signature" = "Every path must return a `string`, and the compiler rejects the function if one can reach the closing brace without a value." }

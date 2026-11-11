@@ -1,9 +1,14 @@
-//! Rust syntax highlighting for the code view.
+//! Syntax highlighting for the code view.
 //!
 //! Hand-rolled on purpose: a lexer that colours keywords, types, strings, numbers,
 //! comments and macros is ~200 lines, while pulling in a fully general highlighter
 //! would add seconds to every build on a small machine. It is a *display* pass —
 //! nothing here is used for grading.
+//!
+//! The tokenizer is shared; only the vocabulary differs per language, in
+//! [`Flavor`]. A second language whose keywords were coloured as Rust's would
+//! read as a theming bug, so the rules live next to the lexer rather than being
+//! guessed at.
 //!
 //! The lexer emits [`Token`]s and the painters turn them into either ANSI (the
 //! line-based view) or ratatui spans (the TUI), so there is one lexer, not two.
@@ -31,31 +36,131 @@ pub enum Token {
     Attribute,
 }
 
-const TYPES: &[&str] = &[
+const RUST_TYPES: &[&str] = &[
     "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize", "f32",
     "f64", "bool", "char", "str",
 ];
 
-const KEYWORDS: &[&str] = &[
+const RUST_KEYWORDS: &[&str] = &[
     "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
     "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
     "ref", "return", "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use",
     "where", "while", "yield",
 ];
 
+const GO_TYPES: &[&str] = &[
+    "bool",
+    "byte",
+    "complex64",
+    "complex128",
+    "error",
+    "float32",
+    "float64",
+    "int",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "rune",
+    "string",
+    "uint",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "uintptr",
+    "any",
+];
+
+const GO_KEYWORDS: &[&str] = &[
+    "break",
+    "case",
+    "chan",
+    "const",
+    "continue",
+    "default",
+    "defer",
+    "else",
+    "fallthrough",
+    "for",
+    "func",
+    "go",
+    "goto",
+    "if",
+    "import",
+    "interface",
+    "map",
+    "package",
+    "range",
+    "return",
+    "select",
+    "struct",
+    "switch",
+    "type",
+    "var",
+    "nil",
+    "true",
+    "false",
+];
+
+/// The language-specific half of the lexer: which words are keywords, which are
+/// types, and which lexical forms exist at all.
+#[derive(Clone, Copy)]
+struct Flavor {
+    keywords: &'static [&'static str],
+    types: &'static [&'static str],
+    /// `word!` is a macro call (Rust), not "not equal" (Go).
+    macros: bool,
+    /// Backtick strings — Go's raw strings, unused in Rust.
+    backticks: bool,
+    /// `'a` is a lifetime, not a rune.
+    lifetimes: bool,
+    /// `#[…]` is an attribute.
+    attributes: bool,
+}
+
+fn flavor(language: &str) -> Flavor {
+    match language {
+        "go" => Flavor {
+            keywords: GO_KEYWORDS,
+            types: GO_TYPES,
+            macros: false,
+            backticks: true,
+            lifetimes: false,
+            attributes: false,
+        },
+        // Anything unknown is highlighted as Rust, which is what the first
+        // corpus was: a wrong colour is a smaller problem than no colour.
+        _ => Flavor {
+            keywords: RUST_KEYWORDS,
+            types: RUST_TYPES,
+            macros: true,
+            backticks: false,
+            lifetimes: true,
+            attributes: true,
+        },
+    }
+}
+
 /// The lines, split into (token, text) runs. Block comments are threaded across
 /// lines, so a `/* … */` that spans them is one comment.
 pub fn tokens(lines: &[&str]) -> Vec<Vec<(Token, String)>> {
+    tokens_in("rust", lines)
+}
+
+/// The lines for a given language, split into (token, text) runs.
+pub fn tokens_in(language: &str, lines: &[&str]) -> Vec<Vec<(Token, String)>> {
+    let flavor = flavor(language);
     let mut state = State::Normal;
     lines
         .iter()
-        .map(|line| tokenize(line, &mut state))
+        .map(|line| tokenize(line, &mut state, &flavor))
         .collect()
 }
 
 /// The same, painted with ANSI escapes (or plain when colour is off).
-pub fn highlight(lines: &[&str], style: Style) -> Vec<String> {
-    tokens(lines)
+pub fn highlight(language: &str, lines: &[&str], style: Style) -> Vec<String> {
+    tokens_in(language, lines)
         .into_iter()
         .map(|runs| {
             runs.into_iter()
@@ -77,7 +182,7 @@ fn paint(token: Token, text: &str, style: Style) -> String {
     }
 }
 
-fn tokenize(line: &str, state: &mut State) -> Vec<(Token, String)> {
+fn tokenize(line: &str, state: &mut State, flavor: &Flavor) -> Vec<(Token, String)> {
     let mut out: Vec<(Token, String)> = Vec::new();
 
     let push = |out: &mut Vec<(Token, String)>, token: Token, text: &str| {
@@ -119,12 +224,23 @@ fn tokenize(line: &str, state: &mut State) -> Vec<(Token, String)> {
         }
 
         // Attributes: #[derive(Debug)] and #![allow(..)]
-        if rest.starts_with('#') {
+        if flavor.attributes && rest.starts_with('#') {
             if let Some(close) = rest.find(']') {
                 push(&mut out, Token::Attribute, &rest[..close + 1]);
                 index += close + 1;
                 continue;
             }
+        }
+
+        // Go's raw strings: `…` (no escapes, may span lines)
+        if flavor.backticks && rest.starts_with('`') {
+            let len = rest[1..]
+                .find('`')
+                .map(|offset| offset + 2)
+                .unwrap_or(rest.len());
+            push(&mut out, Token::String, &rest[..len]);
+            index += len;
+            continue;
         }
 
         // Raw strings first: r"…", r#"…"#, br#"…"#
@@ -146,7 +262,12 @@ fn tokenize(line: &str, state: &mut State) -> Vec<(Token, String)> {
                 index += len;
                 continue;
             }
-            // Otherwise a lifetime: 'static, 'a
+            // Otherwise a lifetime in Rust; in Go an unterminated rune.
+            if !flavor.lifetimes {
+                push(&mut out, Token::Plain, "'");
+                index += 1;
+                continue;
+            }
             let body = rest.strip_prefix('\'').unwrap_or(rest);
             let offset = body
                 .find(|c: char| !(c.is_alphanumeric() || c == '_'))
@@ -174,7 +295,7 @@ fn tokenize(line: &str, state: &mut State) -> Vec<(Token, String)> {
                 .unwrap_or(rest.len());
             let word = &rest[..len];
             let after = &rest[len..];
-            push(&mut out, classify(word, after), word);
+            push(&mut out, classify(word, after, flavor), word);
             index += len;
             continue;
         }
@@ -191,16 +312,16 @@ fn tokenize(line: &str, state: &mut State) -> Vec<(Token, String)> {
     out
 }
 
-fn classify(word: &str, after: &str) -> Token {
-    if KEYWORDS.contains(&word) || word == "Self" {
+fn classify(word: &str, after: &str, flavor: &Flavor) -> Token {
+    if flavor.keywords.contains(&word) || word == "Self" {
         // `self` in a receiver is a value, but colouring it like a keyword reads
         // correctly either way.
         return Token::Keyword;
     }
-    if after.starts_with('!') {
+    if flavor.macros && after.starts_with('!') {
         return Token::Macro; // println!, vec!, matches!
     }
-    if TYPES.contains(&word) || word.chars().next().is_some_and(char::is_uppercase) {
+    if flavor.types.contains(&word) || word.chars().next().is_some_and(char::is_uppercase) {
         return Token::Type; // primitive, type, enum variant, trait
     }
     if after.starts_with('(') {
@@ -274,11 +395,11 @@ mod tests {
     use super::*;
 
     fn paint(line: &str) -> String {
-        highlight(&[line], Style::new(true)).remove(0)
+        highlight("rust", &[line], Style::new(true)).remove(0)
     }
 
     fn plain(line: &str) -> String {
-        highlight(&[line], Style::new(false)).remove(0)
+        highlight("rust", &[line], Style::new(false)).remove(0)
     }
 
     fn kinds(line: &str) -> Vec<(Token, String)> {
@@ -358,6 +479,7 @@ mod tests {
     #[test]
     fn a_block_comment_spanning_lines_stays_a_comment() {
         let lines = highlight(
+            "rust",
             &["let a = 1; /* start", "still", "end */ let b = 2;"],
             Style::new(true),
         );
@@ -390,6 +512,7 @@ mod tests {
     #[test]
     fn an_unterminated_string_does_not_eat_the_next_line() {
         let lines = highlight(
+            "rust",
             &[r#"let s = "unterminated"#, "let n = 1;"],
             Style::new(true),
         );
@@ -406,5 +529,69 @@ mod tests {
             let rebuilt: String = kinds(line).into_iter().map(|(_, text)| text).collect();
             assert_eq!(rebuilt, line);
         }
+    }
+
+    #[test]
+    fn go_keywords_are_keywords_not_plain_text() {
+        let runs = tokens_in("go", &[r#"func label(n int) string {"#]);
+        let kind = |word: &str| {
+            runs[0]
+                .iter()
+                .find(|(_, text)| text == word)
+                .map(|(token, _)| *token)
+        };
+        assert_eq!(kind("func"), Some(Token::Keyword));
+        assert_eq!(kind("string"), Some(Token::Type));
+        assert_eq!(kind("int"), Some(Token::Type));
+    }
+
+    #[test]
+    fn rust_words_are_not_coloured_as_go_and_the_other_way_round() {
+        // `type` is a keyword in both; `fn` only in Rust, `func` only in Go.
+        let rust = tokens_in("rust", &["fn work() {}"]);
+        assert_eq!(rust[0][0].0, Token::Keyword);
+        let go = tokens_in("go", &["fn work"]);
+        assert_eq!(go[0][0].0, Token::Plain);
+
+        let go = tokens_in("go", &["func work() {}"]);
+        assert_eq!(go[0][0].0, Token::Keyword);
+        let rust = tokens_in("rust", &["func work"]);
+        assert_eq!(rust[0][0].0, Token::Plain);
+    }
+
+    #[test]
+    fn not_equal_in_go_is_not_a_macro() {
+        // `err != nil` — in Rust `word!` is a macro, and colouring `err` like one
+        // would put magenta in the middle of every Go error check.
+        let runs = tokens_in("go", &["if err != nil {"]);
+        assert!(
+            runs[0].iter().all(|(token, _)| *token != Token::Macro),
+            "{runs:?}"
+        );
+        let rust = tokens_in("rust", &["let err = err!"]);
+        assert!(rust[0].iter().any(|(token, _)| *token == Token::Macro));
+    }
+
+    #[test]
+    fn a_go_rune_is_a_string_and_a_rust_lifetime_is_not() {
+        let go = tokens_in("go", &["c := 'x'"]);
+        assert!(
+            go[0]
+                .iter()
+                .any(|(token, text)| *token == Token::String && text == "'x'")
+        );
+        let rust = tokens_in("rust", &["fn f<'a>(x: &'a str) {}"]);
+        assert!(rust[0].iter().any(|(token, _)| *token == Token::Lifetime));
+    }
+
+    #[test]
+    fn backtick_strings_are_raw_strings_in_go() {
+        let runs = tokens_in("go", &["q := `raw \\ string`"]);
+        assert!(
+            runs[0]
+                .iter()
+                .any(|(token, text)| *token == Token::String && text.starts_with('`')),
+            "{runs:?}"
+        );
     }
 }

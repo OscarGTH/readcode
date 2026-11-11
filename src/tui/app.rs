@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn typing_then_enter_stores_the_answer_and_moves_on() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         let first_line = app.prompts[0].start;
 
@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn enter_on_an_empty_answer_skips_the_prompt() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         app.on_key(Key::Enter);
         assert_eq!(app.index, 1);
@@ -402,7 +402,7 @@ mod tests {
     #[test]
     fn the_last_answer_asks_for_grading() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         for _ in 0..app.prompts.len() {
             type_text(&mut app, "something");
@@ -418,7 +418,7 @@ mod tests {
     #[test]
     fn backspace_deletes_before_the_cursor_only() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         type_text(&mut app, "abcd");
         app.on_key(Key::Left);
@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn ctrl_j_inserts_a_newline_and_enter_submits() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         type_text(&mut app, "first");
         app.on_key(Key::Newline);
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn back_reopens_the_previous_answer() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         type_text(&mut app, "one");
         app.on_key(Key::Enter);
@@ -460,7 +460,7 @@ mod tests {
     #[test]
     fn typing_a_multi_byte_character_keeps_the_cursor_on_boundaries() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         type_text(&mut app, "ä");
         type_text(&mut app, "ö");
@@ -472,7 +472,7 @@ mod tests {
     #[test]
     fn escape_abandons_the_sitting() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         assert_eq!(app.on_key(Key::Escape), Action::Abort);
     }
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn retry_is_only_offered_after_a_failure_and_keeps_the_answers() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         type_text(&mut app, "an answer worth keeping");
         app.on_key(Key::Enter);
@@ -500,7 +500,7 @@ mod tests {
     #[test]
     fn the_review_scrolls_and_finishes() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap().clone();
+        let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         app.phase = Phase::Review;
         app.on_key(Key::Char('j'));

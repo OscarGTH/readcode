@@ -53,26 +53,47 @@ Then everyday:
 readcode            # annotate the snippet that is most due
 readcode status     # what you have mastered, what is due
 readcode list       # the snippets available, with their levels
+readcode lang       # the languages in the corpus, and how far you are in each
 readcode level      # what level you are reading at
 readcode draft f.rs # turn a file into a draft snippet with your reviewer
 readcode models     # which models your agent offers
 ```
 
-The first run asks one question — how much of the language you can read — and starts you
-on the easiest material that fits. Answering it honestly matters more than answering it
-flatteringly: the app would rather hand you five easy lines than a file you cannot start.")["success"])
+The first run asks two things — which language, and how much of it you can read — then
+starts you on the easiest material that fits. Answering honestly matters more than
+answering flatteringly: the app would rather hand you five easy lines than a file you
+cannot start.
 
-# The levels section, before "Blocks or lines".
-print(patch(p, ### Levels
+### Languages
+
+The corpus carries more than one language, and each keeps its own level, its own seen
+snippets and its own concepts. Reading Go never decides what Rust offers you next:
+
+```sh
+readcode lang           # what the corpus has, and how far you are in each
+readcode lang go        # switch, and keep both
+readcode --language go  # or for one run only
+```
+
+`readcode status` counts only the language you are in, and lists the others — with their
+seen counts — at the bottom, so the second language is discoverable rather than something
+you have to remember. `readcode --snippet` still reaches anything in either language.
+
+The shipped corpus is fifteen Rust snippets and six Go ones, levels 1 to 3 for Go and 1 to
+4 for Rust; `readcode list` shows both, with the language in its own column.
+
+![A Go sitting's review: `func` and `string` coloured as Go keywords, and Go Tour links under each prompt](docs/go.png)
+
+### Levels
 
 Every snippet is written for a rung, 1 to 5, easiest first:
 
 ```
 1 · just started — values, arithmetic, printing
-2 · small functions — branches, loops, one borrow at a time
-3 · whole modules — structs, methods, iterators, error handling
-4 · unfamiliar crates — traits, generics, lifetimes
-5 · reads Rust for a living
+2 · small functions — branches, loops, one thing at a time
+3 · whole files — structs, methods, iteration, error handling
+4 · unfamiliar code — generics, traits, lifetimes, other people's idioms
+5 · reads this language for a living
 ```
 
 `readcode level 2` sets yours, and `readcode level` shows the rungs with yours marked. The
@@ -90,13 +111,13 @@ A snippet can declare a band instead of a single rung (`levels = [2, 4]`), which
 "this is a level 2 idea but the code itself is level 4" gets expressed.
 
 Your level is a claim about you, not a gate: nothing stops you from running
-`readcode --snippet 003` at level 2 to try the iterator chain, and it will not move your
-level down if you struggle. Setting it lower is the useful direction — going back over the
-easy material is cheap, and being dropped into code you cannot read teaches nothing.
+`readcode --snippet rust-003` to try the iterator chain, and it will not move your level
+down if you struggle. Setting it lower is the useful direction — going back over the easy
+material is cheap, and being dropped into code you cannot read teaches nothing.
 
-### Blocks or lines
-
-Progress is saved between runs, so `readcode` is the same command every day.
+Progress is saved between runs, so `readcode` is the same command every day — and the same
+command in both languages, which is why the language is remembered rather than passed each
+time.
 
 ## Using it
 
@@ -315,6 +336,8 @@ readcode --corpus ~/my-snippets check      # validate before you study
 
 Files are found recursively, so `~/my-snippets/rust/*.toml` and
 `~/my-snippets/python/*.toml` both work. One snippet per file; the `id` must be unique.
+The directory names are a convention, not a rule — `language` in the file is what counts,
+and a language the corpus has never seen simply becomes a new entry in `readcode lang`.
 
 ### The smallest snippet that works
 
@@ -382,7 +405,10 @@ skipped). To give one line its own question and note:
 Snippet:
 
 - `id` — unique; `--snippet` matches it, or its title. Prefix by language: `rust-001`.
-- `language`, `title` — shown in the header.
+- `language` — `rust`, `go`, or any name of your own. It decides which selectors offer the
+  snippet, which progress it counts towards, and which vocabulary the highlighter uses;
+  a language the lexer does not know falls back to Rust's colours rather than none.
+- `title` — shown in the header, and matched by `--snippet` alongside the title.
 - `code` — the code, in a TOML literal string (`'''`). Line numbers are 1-based.
 - `source`, `intro` — optional: where the code came from, and one line saying what it
   *is*. Both are descriptive; the app already explains what the learner has to do.
@@ -486,7 +512,8 @@ python3 scripts/render_frame.py /tmp/f.json docs/tui.html "readcode"
 
 - [x] Line-by-line annotation alongside block mode
 - [x] A ratatui view: the code on screen, notes written on it, arrow keys instead of prompts
-- [ ] More corpora: Python, TypeScript, Go, and "read your own repo" mode
+- [ ] More corpora: Python, TypeScript, and "read your own repo" mode
+- [x] A second language (Go), with its own level and progress
 - [ ] A targeted follow-up question when a concept is unknown, not just a note
 - [ ] An MCP server so your agent can look up weak concepts while you work
 
