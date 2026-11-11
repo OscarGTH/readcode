@@ -1,8 +1,8 @@
 id = "rust-004"
 language = "rust"
 title = "A struct with behaviour: impl, &mut self and a loop"
-source = "the shape of most small Rust types"
-intro = "A struct with one mutating method, driven by a loop that checks its return value."
+source = "the shape of a counter in most Rust code"
+intro = "A counter whose method both mutates and reports, driven by a `while` loop."
 levels = [2, 3]
 
 code = '''
@@ -28,18 +28,18 @@ fn main() {
 
 [[blocks]]
 lines = [1, 5]
-ask = "What does `#[derive(Default)]` let `main` call that this struct never writes?"
-concepts = ["rust.struct", "rust.derive", "rust.type.u32"]
-notes = { "rust.struct" = "`Counter` is a named type with a single field, `hits`.", "rust.derive" = "`#[derive(Default)]` generates `impl Default for Counter`, which yields `Counter { hits: 0 }`.", "rust.type.u32" = "`u32` is an unsigned 32-bit integer: no negative values, and the struct's size is just that field's four bytes." }
+ask = "Nobody wrote a `default` here — where does `Counter::default()` come from, and what does it hand back?"
+concepts = ["rust.derive", "rust.type.u32"]
+notes = { "rust.derive" = "`#[derive(Default)]` writes `impl Default for Counter` for you, which builds the value with every field at its type's default — `hits: 0`.", "rust.type.u32" = "`u32` is unsigned and 32 bits wide, so `hits` cannot go negative and the struct is exactly that one field." }
 
 [[blocks]]
 lines = [6, 11]
-ask = "What does `&mut self` let `hit` do to the counter it is called on?"
-concepts = ["rust.impl", "rust.mut_self", "rust.return.bool", "rust.operator.compound"]
-notes = { "rust.impl" = "`impl Counter` attaches methods to the type; `Counter::default()` and `counter.hit()` both come from impls.", "rust.mut_self" = "`&mut self` takes an exclusive borrow of the value, which is the only way a method may write to `self.hits` — and it forces the caller's binding to be `mut`.", "rust.return.bool" = "The last expression `self.hits >= 3` is the return value; there is no `return` keyword and no semicolon.", "rust.operator.compound" = "`+=` is compound assignment: read `hits`, add one, write it back — the same as `self.hits = self.hits + 1`." }
+ask = "What does `&mut self` let `hit` do that a plain `self` would not, and what does it force on the caller?"
+concepts = ["rust.impl", "rust.mut_self", "rust.return.bool"]
+notes = { "rust.impl" = "`impl Counter` attaches methods to the type; there is no separate class body, and `Counter::default()` came from an impl too.", "rust.mut_self" = "`&mut self` takes an exclusive borrow, which is the only way a method may write through `self` — and it forces the caller's binding to be `mut`.", "rust.return.bool" = "`self.hits >= 3` is the tail expression, so it is the return value; no `return`, no semicolon." }
 
 [[blocks]]
 lines = [12, 18]
-ask = "What does `!counter.hit()` mean to the loop while the count is under three?"
-concepts = ["rust.binding.mut", "rust.loop.while", "rust.method.call", "rust.operator.not"]
-notes = { "rust.binding.mut" = "`hit` takes `&mut self`, so the binding must be `let mut`; `Default::default()` cannot be called on an immutable binding here.", "rust.loop.while" = "`while` evaluates the condition before each iteration and stops when it is `false`.", "rust.method.call" = "`counter.hit()` calls the inherent method with `&mut counter` as the receiver; the return value is used directly as the condition.", "rust.operator.not" = "`!` inverts the `bool`: the loop keeps running while `hit()` returns `false`." }
+ask = "The loop calls a `&mut self` method and then reads `counter.hits` in the same iteration. Why is that allowed?"
+concepts = ["rust.binding.mut", "rust.borrow.short"]
+notes = { "rust.binding.mut" = "`hit` needs exclusive access, so `counter` must be declared `mut`; `let counter` would be a compile error.", "rust.borrow.short" = "The exclusive borrow ends when `hit()` returns, so the `println!` on the next line may read `counter.hits` again. Borrows are not held to the end of the loop body." }

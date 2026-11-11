@@ -17,18 +17,18 @@ func (p Point) Dist() float64 {
 
 [[blocks]]
 lines = [1, 2]
-ask = "What does this import make available?"
+ask = "What does importing `math` give the package, and what is the name it is used by?"
 concepts = ["go.import"]
-notes = { "go.import" = "`math` brings `Sqrt` and the rest of the package in under the name `math`." }
+notes = { "go.import" = "`import \"math\"` binds the package under the last element of its path, so the body calls `math.Sqrt`. An import that is never used will not compile." }
 
 [[blocks]]
 lines = [3, 6]
-ask = "How many fields does `Point` have, and what are their types?"
-concepts = ["go.struct.define"]
-notes = { "go.struct.define" = "Two fields, both `float64`: `X, Y float64` is shorthand for two declarations." }
+ask = "How many fields does `Point` have, and what does the capital letter on `X` decide?"
+concepts = ["go.struct.fields", "go.export.capital"]
+notes = { "go.struct.fields" = "`X, Y float64` declares two `float64` fields in one line; the struct is a value type, so assigning a `Point` copies both numbers.", "go.export.capital" = "Capitalisation is the access rule in Go: `X` and `Y` are exported and visible outside the package, `x` and `y` would be private to it. There is no `pub`." }
 
 [[blocks]]
 lines = [7, 9]
-ask = "What does the `(p Point)` part do, and what does it mean for the caller?"
+ask = "What does `(p Point)` do, and what does it mean for the value the caller passes in?"
 concepts = ["go.method.receiver", "go.value.semantics"]
-notes = { "go.method.receiver" = "It makes `Dist` a method on `Point`; a value receiver means `p` is a copy of the struct at the call.", "go.value.semantics" = "With a value receiver the method works on a copy, so it cannot change the caller's Point — fine here, since it only reads." }
+notes = { "go.method.receiver" = "The bracketed name before the function is the receiver: it is what makes `Dist` a method on `Point`, called as `p.Dist()`.", "go.value.semantics" = "A value receiver gets a copy of the struct, so a method cannot change the caller's `Point` this way. `(p *Point)` would share it — that is the choice a Go author makes per method." }

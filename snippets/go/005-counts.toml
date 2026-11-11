@@ -15,24 +15,24 @@ func wordCount(words []string) map[string]int {
 
 [[blocks]]
 lines = [1, 1]
-ask = "What does the return type say about the keys and the values?"
-concepts = ["go.map.type"]
-notes = { "go.map.type" = "`map[string]int` maps string keys to int values, and the whole map is returned." }
+ask = "What is the zero value of the map type in this signature, and what can you do with it?"
+concepts = ["go.map.zero"]
+notes = { "go.map.zero" = "A map declared but not made is `nil`: reading from it returns zero values and never panics, but writing to it panics. That is why the next line calls `make`." }
 
 [[blocks]]
 lines = [2, 2]
-ask = "Why `make` here rather than declaring an empty map by hand?"
+ask = "Why `make` rather than `var counts map[string]int`?"
 concepts = ["go.map.make"]
-notes = { "go.map.make" = "A nil map can be read but not written; `make` allocates one ready for assignment." }
+notes = { "go.map.make" = "`make` allocates the map's internals so it can be written to. `var counts map[string]int` would be nil, and the first `counts[word]++` would panic." }
 
 [[blocks]]
 lines = [3, 4]
-ask = "What does `counts[word]++` do when the key has never been seen?"
+ask = "`counts[word]++` on a key that has never been seen — where does the number come from?"
 concepts = ["go.map.index", "go.zero.value"]
-notes = { "go.map.index" = "Indexing a missing key returns the value type's zero value, so the increment writes 1.", "go.zero.value" = "The zero value of `int` is 0, which is exactly what the first increment needs." }
+notes = { "go.map.index" = "Indexing a map with a missing key is not an error: it yields the value type's zero value, so the map is never asked to hold a nil.", "go.zero.value" = "That zero value is `0` for `int`. Go has no uninitialised memory, so this idiom works for every map of numbers or strings." }
 
 [[blocks]]
 lines = [5, 7]
-ask = "What does the caller receive, and what can it do with it?"
+ask = "What does the caller get — a copy of the map, or the map itself?"
 concepts = ["go.map.reference"]
-notes = { "go.map.reference" = "Maps are reference types: the returned map shares the same underlying data as `counts`, so a change on one side is visible on the other." }
+notes = { "go.map.reference" = "Maps are reference values: the returned map shares the same internals as `counts`, so a change through either name is seen by both. Slices work the same way, arrays and structs do not." }

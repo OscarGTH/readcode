@@ -17,9 +17,9 @@ func evens(values []int) []int {
 
 [[blocks]]
 lines = [1, 1]
-ask = "What does `[]int` mean in each of the two places it appears?"
-concepts = ["go.slice.type"]
-notes = { "go.slice.type" = "A slice of ints: a pointer, a length and a capacity. The caller keeps ownership of the backing array." }
+ask = "`values []int` and the `[]int` it returns — what does the function actually receive, and what does it hand back?"
+concepts = ["go.slice.header"]
+notes = { "go.slice.header" = "A slice is three words: pointer to the data, length and capacity. Passing or returning one copies those three words, not the numbers — both sides still look at the same backing array." }
 
 [[blocks]]
 lines = [2, 2]
@@ -41,6 +41,6 @@ notes = { "go.append" = "`append` returns a slice — usually the same backing a
 
 [[blocks]]
 lines = [7, 9]
-ask = "What does the caller get, and can it change your slice?"
-concepts = ["go.slice.type"]
-notes = { "go.slice.type" = "The returned slice shares the backing array with `out`; the caller gets a copy of the header, not a deep copy of the ints." }
+ask = "The caller now holds `out` too — can it change what you built?"
+concepts = ["go.slice.header"]
+notes = { "go.slice.header" = "Yes, until `append` reallocates: the returned header points at the same array, so writing through either slice is visible in the other. `append` past the capacity is what quietly breaks the sharing." }

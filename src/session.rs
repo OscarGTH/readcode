@@ -1354,7 +1354,9 @@ mod tests {
                 state.due_at = 9_000_000;
             }
         }
-        let target = corpus.find("rust-003").unwrap();
+        // rust-011's concepts are shared with rust-009, so zeroing them makes
+        // several snippets weak rather than one — which is what this test is about.
+        let target = corpus.find("rust-011").unwrap();
         for concept in target.concepts() {
             let state = progress.concept_mut(&concept);
             state.strength = 0.0;
@@ -1362,9 +1364,9 @@ mod tests {
             state.due_at = 0;
         }
 
-        // Concepts are shared between snippets, so zeroing rust-003's concepts
-        // also weakens every snippet that teaches the same ids. The assertion is
-        // therefore about the weak concepts, not about one id.
+        // Concepts are shared between snippets, so zeroing these also weakens
+        // every snippet that teaches the same ids. The assertion is therefore
+        // about the weak concepts, not about one id.
         let weak: std::collections::BTreeSet<String> = target.concepts().into_iter().collect();
         let mut hits = 0;
         for seed in 0..40u64 {

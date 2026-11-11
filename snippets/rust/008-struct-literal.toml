@@ -1,9 +1,10 @@
 id = "rust-008"
 language = "rust"
-title = "A struct, built and read"
+title = "A struct, built and copied"
 level = 2
-intro = "A type with two fields, one value of that type, and a field read."
+intro = "A point built twice, once from the other's fields."
 code = '''
+#[derive(Clone, Copy)]
 struct Point {
     x: f64,
     y: f64,
@@ -11,18 +12,19 @@ struct Point {
 
 fn main() {
     let origin = Point { x: 0.0, y: 0.0 };
-    println!("{:.1} {:.1}", origin.x, origin.y);
+    let shifted = Point { x: 1.0, ..origin };
+    println!("{:.1},{:.1} and {:.1},{:.1}", origin.x, origin.y, shifted.x, shifted.y);
 }
 '''
 
 [[blocks]]
 lines = [1, 5]
-ask = "What does this declaration define, and when does it do anything?"
-concepts = ["rust.struct"]
-notes = { "rust.struct" = "It defines a new named type with two `f64` fields; a declaration creates no value by itself." }
+ask = "`#[derive(Clone, Copy)]` — what changes about assigning a `Point`, and what would happen without it?"
+concepts = ["rust.derive.copy"]
+notes = { "rust.derive.copy" = "`Copy` says the value can be duplicated bit for bit, so `let a = p;` copies instead of moving and `p` stays usable. A struct of `f64`s qualifies; one holding a `String` could not derive it." }
 
 [[blocks]]
-lines = [6, 9]
-ask = "What is `origin`, and what do `origin.x` and `origin.y` give you?"
-concepts = ["rust.struct.literal", "rust.field.access", "rust.format.float"]
-notes = { "rust.struct.literal" = "`Point { x: 0.0, y: 0.0 }` builds a value of type `Point` with both fields set.", "rust.field.access" = "`origin.x` reads a field by name; reading does not move the value or copy the struct.", "rust.format.float" = "`{:.1}` prints a float with one decimal place." }
+lines = [6, 11]
+ask = "What does `..origin` fill in, and why is `origin` still readable on the next line?"
+concepts = ["rust.struct.update", "rust.format.float"]
+notes = { "rust.struct.update" = "`..origin` takes every field not named, from `origin` — a copy here because `Point: Copy`, a move otherwise.", "rust.format.float" = "`{:.1}` prints an `f64` with one decimal place; `{}` would print the shortest form that round-trips." }

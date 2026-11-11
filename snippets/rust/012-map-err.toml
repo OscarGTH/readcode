@@ -20,8 +20,8 @@ notes = { "rust.result" = "`Result<u16, String>` is either the port or a message
 [[blocks]]
 lines = [2, 2]
 ask = "What does `trim()` return, and where was the text before it?"
-concepts = ["rust.slice", "rust.method.call"]
-notes = { "rust.slice" = "`trim()` returns a `&str` slice of the same text with the edges removed; nothing is copied.", "rust.method.call" = "Methods chain here because each returns a value the next one takes." }
+concepts = ["rust.slice", "rust.borrow.chain"]
+notes = { "rust.slice" = "`trim()` returns a `&str` slice of the same text with the edges removed; nothing is copied.", "rust.borrow.chain" = "Every step in this chain borrows the same buffer: `trim`, `parse` and `map_err` allocate nothing, and only the error message is new." }
 
 [[blocks]]
 lines = [3, 3]

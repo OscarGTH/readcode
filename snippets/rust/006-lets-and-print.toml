@@ -2,7 +2,7 @@ id = "rust-006"
 language = "rust"
 title = "Five lines, nothing hidden"
 level = 1
-intro = "The smallest complete program: two numbers, one sum, one line of output."
+intro = "Three bindings and a print: what the compiler works out, and what you may not do."
 code = '''
 fn main() {
     let apples = 3;
@@ -13,25 +13,19 @@ fn main() {
 '''
 
 [[blocks]]
-lines = [1, 1]
-ask = "What is this line for?"
-concepts = ["rust.fn.main"]
-notes = { "rust.fn.main" = "`main` is where the program starts; every executable Rust program has one." }
-
-[[blocks]]
-lines = [2, 3]
-ask = "What do these two lines create?"
-concepts = ["rust.binding.immutable"]
-notes = { "rust.binding.immutable" = "`let` binds a name to a value; without `mut` the name cannot be reassigned." }
+lines = [1, 3]
+ask = "What type is `apples`, when nothing says so — and what may you not do with the name afterwards?"
+concepts = ["rust.binding.immutable", "rust.type.default_int"]
+notes = { "rust.binding.immutable" = "`let` binds without `mut`, so the name cannot be reassigned; `apples = 4` would not compile.", "rust.type.default_int" = "An integer literal with nothing to force it is an `i32`, so both bindings are `i32` — there is no `int`, and no widening later." }
 
 [[blocks]]
 lines = [4, 4]
-ask = "How is `total` worked out?"
-concepts = ["rust.operator.arith"]
-notes = { "rust.operator.arith" = "`+` adds the two integers that the names refer to; the result is bound to a new name." }
+ask = "Where does `total`'s type come from, and could you add an `f64` to it here?"
+concepts = ["rust.type.inference"]
+notes = { "rust.type.inference" = "The compiler works the type out from the operands: `i32 + i32` is `i32`. Rust will not silently mix numeric types, so adding an `f64` needs an explicit `as`." }
 
 [[blocks]]
 lines = [5, 6]
-ask = "What ends up on the terminal, and what does `{total}` do?"
+ask = "`println!` ends in `!` — what does that mark, and where does `{total}` get its value?"
 concepts = ["rust.macro.println", "rust.format.capture"]
-notes = { "rust.format.capture" = "`{total}` is captured from the surrounding scope by name, so no argument is passed after the string.", "rust.macro.println" = "`println` is a macro that writes a line to standard output." }
+notes = { "rust.macro.println" = "The `!` marks a macro: it is expanded at compile time and checks the format string against its arguments, which a function call cannot do.", "rust.format.capture" = "`{total}` is captured from the surrounding scope by name; without capture you would pass `total` as an extra argument after the format string." }

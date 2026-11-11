@@ -16,18 +16,18 @@ func main() {
 
 [[blocks]]
 lines = [1, 1]
-ask = "What does `package main` tell the toolchain?"
+ask = "What does `package main` decide about this file, and what would a different name mean?"
 concepts = ["go.package.main"]
-notes = { "go.package.main" = "A package named `main` is compiled into an executable, and its `main` function is the entry point." }
+notes = { "go.package.main" = "A package called `main` is compiled into an executable, and its `func main()` is where the program starts. Any other package name makes a library that cannot be run on its own." }
 
 [[blocks]]
 lines = [2, 4]
-ask = "What does the import make available, and where does the name `fmt` come from?"
+ask = "Where does the name `fmt` come from, and what happens if you import a package you never use?"
 concepts = ["go.import"]
-notes = { "go.import" = "`import \"fmt\"` brings the package in under its own name, so `fmt.Println` refers to it." }
+notes = { "go.import" = "The last element of the import path is the name you write: `\"fmt\"` gives `fmt.Println`. An unused import is a compile error in Go, unlike an unused variable-free language." }
 
 [[blocks]]
 lines = [5, 8]
-ask = "What is `name` — its type, and how it got one?"
-concepts = ["go.short_var", "go.fmt.println"]
-notes = { "go.short_var" = "`name := \"ferris\"` declares and assigns in one step, inferring `string` from the literal.", "go.fmt.println" = "`fmt.Println` writes its arguments separated by spaces and appends a newline." }
+ask = "What does `:=` do that `var name string = \"ferris\"` also does — and what can it not do?"
+concepts = ["go.short_var"]
+notes = { "go.short_var" = "`:=` declares and assigns in one step, taking the type from the right-hand side. It only works inside a function: at package level you must use `var`." }

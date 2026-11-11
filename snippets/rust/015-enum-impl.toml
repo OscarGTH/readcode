@@ -28,8 +28,8 @@ notes = { "rust.enum.define" = "`Shape` is one type with two forms; a value is e
 [[blocks]]
 lines = [6, 8]
 ask = "What does `&self` let this method do, and what does it promise back?"
-concepts = ["rust.impl", "rust.mut_self"]
-notes = { "rust.impl" = "`impl Shape` attaches the method to the type, so `shape.area()` works.", "rust.mut_self" = "`&self` borrows the value for the call without taking ownership or needing `mut`." }
+concepts = ["rust.impl", "rust.ref_self"]
+notes = { "rust.impl" = "`impl Shape` attaches the method to the type, so `shape.area()` works.", "rust.ref_self" = "`&self` is a shared borrow: the caller keeps ownership, no `mut` is needed anywhere, and inside the method the value may be read but not written. `&mut self` would be the writing version." }
 
 [[blocks]]
 lines = [9, 12]

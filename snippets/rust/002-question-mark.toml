@@ -24,8 +24,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 [[blocks]]
 lines = [1, 3]
 ask = "What does `Box<dyn Error>` let this signature promise about failure?"
-concepts = ["rust.use.import", "rust.error.dynamic"]
-notes = { "rust.use.import" = "`use` brings `std::fs` into scope so the body can write `fs::` instead of `std::fs::`.", "rust.error.dynamic" = "`Box<dyn Error>` erases the concrete type behind a pointer, so an `io::Error` and a `ParseIntError` both fit the same return type." }
+concepts = ["rust.dyn.dispatch", "rust.error.dynamic"]
+notes = { "rust.dyn.dispatch" = "`dyn` means dynamic dispatch: the value is a fat pointer to the error plus a vtable, so the call to `Display`/`Debug` is resolved at run time rather than compiled in. That is what lets one return type hold any error.", "rust.error.dynamic" = "`Box<dyn Error>` puts that behind a `Box`, because a `dyn` value has no size known at compile time. An `io::Error` and a `ParseIntError` both fit." }
 
 [[blocks]]
 lines = [4, 7]

@@ -998,9 +998,10 @@ mod tests {
                 prompt: 0,
                 verdict: Verdict::Correct,
                 concepts: vec![(prompt.concepts[0].clone(), Verdict::Correct)],
-                feedback: "Spot on — `main` is the entry point where execution begins.".into(),
+                feedback: "Spot on — `let` binds without `mut`, so the name cannot be reassigned."
+                    .into(),
                 missing: vec![],
-                teach: Some("`main` is where the program starts.".into()),
+                teach: Some("`let` binds a name that cannot be reassigned.".into()),
             }],
         };
         app.finish(grade);
@@ -1013,12 +1014,15 @@ mod tests {
         // And it still gets the lesson: a right answer may have been a guess.
         assert!(screen.contains("why"), "{screen}");
         assert!(
-            screen.contains("`main` is where the program starts"),
+            screen.contains("`let` binds a name that cannot be reassigned"),
             "{screen}"
         );
         // With its reading beside it.
         assert!(screen.contains("docs"), "{screen}");
-        assert!(screen.contains("ch01-02-hello-world"), "{screen}");
+        assert!(
+            screen.contains("ch03-01-variables-and-mutability"),
+            "{screen}"
+        );
     }
 
     #[test]
@@ -1076,39 +1080,34 @@ mod tests {
     #[test]
     fn a_shared_topic_is_read_more_once() {
         let corpus = Corpus::builtin().unwrap();
-        // 006's lines 2 and 3 both teach mutability, so both map to one page.
         let snippet = corpus.find("rust-006").unwrap();
         let mut app = app_with_answer(snippet);
+        // Two concepts that point at the same page: both are about borrowing, and
+        // the review must send the learner to that page once, not twice.
+        app.prompts[0].concepts = vec![
+            "rust.borrow".to_string(),
+            "rust.borrow.str_param".to_string(),
+        ];
         app.on_key(Key::Char('x'));
         app.on_key(Key::Enter);
         let grade = Grade {
             reviewer: "acp:opencode".into(),
             summary: String::new(),
-            prompts: vec![
-                PromptGrade {
-                    prompt: 0,
-                    verdict: Verdict::Correct,
-                    concepts: vec![(app.prompts[0].concepts[0].clone(), Verdict::Correct)],
-                    feedback: String::new(),
-                    missing: vec![],
-                    teach: None,
-                },
-                PromptGrade {
-                    prompt: 1,
-                    verdict: Verdict::Partial,
-                    concepts: vec![(app.prompts[1].concepts[0].clone(), Verdict::Partial)],
-                    feedback: String::new(),
-                    missing: vec![],
-                    teach: None,
-                },
-            ],
+            prompts: vec![PromptGrade {
+                prompt: 0,
+                verdict: Verdict::Correct,
+                concepts: vec![("rust.borrow".to_string(), Verdict::Correct)],
+                feedback: String::new(),
+                missing: vec![],
+                teach: None,
+            }],
         };
         app.finish(grade);
         let screen = screen(&app, 96, 26);
         assert_eq!(
-            screen.matches("ch03-01-variables-and-mutability").count(),
+            screen.matches("ch04-02-references-and-borrowing").count(),
             1,
-            "the page for `let` should be listed once:\n{screen}"
+            "one prompt, two concepts, one page:\n{screen}"
         );
     }
 

@@ -61,11 +61,6 @@ const TABLE: &[(&str, &str, &str)] = &[
         "https://doc.rust-lang.org/book/ch03-02-data-types.html",
     ),
     (
-        "rust.fn.main",
-        "The Rust Book — Hello, World!",
-        "https://doc.rust-lang.org/book/ch01-02-hello-world.html",
-    ),
-    (
         "rust.fn.return",
         "The Rust Book — Functions",
         "https://doc.rust-lang.org/book/ch03-03-how-functions-work.html",
@@ -86,16 +81,6 @@ const TABLE: &[(&str, &str, &str)] = &[
         "https://doc.rust-lang.org/std/process/fn.exit.html",
     ),
     (
-        "rust.struct",
-        "The Rust Book — Defining and Instantiating Structs",
-        "https://doc.rust-lang.org/book/ch05-01-defining-structs.html",
-    ),
-    (
-        "rust.field",
-        "The Rust Book — Defining and Instantiating Structs",
-        "https://doc.rust-lang.org/book/ch05-01-defining-structs.html",
-    ),
-    (
         "rust.impl",
         "The Rust Book — Method Syntax",
         "https://doc.rust-lang.org/book/ch05-03-method-syntax.html",
@@ -106,29 +91,9 @@ const TABLE: &[(&str, &str, &str)] = &[
         "https://doc.rust-lang.org/std/default/trait.Default.html",
     ),
     (
-        "rust.method.call",
-        "The Rust Book — Method Syntax",
-        "https://doc.rust-lang.org/book/ch05-03-method-syntax.html",
-    ),
-    (
         "rust.if",
         "The Rust Book — Control Flow",
         "https://doc.rust-lang.org/book/ch03-05-control-flow.html",
-    ),
-    (
-        "rust.loop",
-        "The Rust Book — Control Flow",
-        "https://doc.rust-lang.org/book/ch03-05-control-flow.html",
-    ),
-    (
-        "rust.operator.compound",
-        "Rust reference — Compound assignment",
-        "https://doc.rust-lang.org/reference/expressions/operator-expr.html#compound-assignment-expressions",
-    ),
-    (
-        "rust.operator",
-        "std::ops",
-        "https://doc.rust-lang.org/std/ops/index.html",
     ),
     (
         "rust.iterator.adaptor",
@@ -273,26 +238,6 @@ const TABLE: &[(&str, &str, &str)] = &[
         "https://go.dev/tour/basics/10",
     ),
     (
-        "go.fmt.println",
-        "pkg.go.dev — fmt.Println",
-        "https://pkg.go.dev/fmt#Println",
-    ),
-    (
-        "go.fmt.errorf",
-        "pkg.go.dev — fmt.Errorf",
-        "https://pkg.go.dev/fmt#Errorf",
-    ),
-    (
-        "go.func.signature",
-        "The Go Tour — Functions",
-        "https://go.dev/tour/basics/4",
-    ),
-    (
-        "go.if",
-        "The Go Tour — If",
-        "https://go.dev/tour/flowcontrol/5",
-    ),
-    (
         "go.return.early",
         "Effective Go — Control structures",
         "https://go.dev/doc/effective_go#control-structures",
@@ -382,6 +327,41 @@ const TABLE: &[(&str, &str, &str)] = &[
         "The Go Blog — Error handling and Go",
         "https://go.dev/blog/error-handling-and-go",
     ),
+    (
+        "go.export.capital",
+        "A Tour of Go — Exported names",
+        "https://go.dev/tour/basics/3",
+    ),
+    (
+        "go.func.return",
+        "A Tour of Go — Functions",
+        "https://go.dev/tour/basics/4",
+    ),
+    (
+        "go.return.all.paths",
+        "The Go Spec — Terminating statements",
+        "https://go.dev/ref/spec#Terminating_statements",
+    ),
+    (
+        "rust.dyn.dispatch",
+        "The Rust Book — Using Trait Objects That Allow for Values of Different Types",
+        "https://doc.rust-lang.org/book/ch17-02-trait-objects.html",
+    ),
+    (
+        "rust.overflow",
+        "The Rust Book — Integer Overflow",
+        "https://doc.rust-lang.org/book/ch03-02-data-types.html#integer-overflow",
+    ),
+    (
+        "rust.ref_self",
+        "The Rust Book — Method Syntax",
+        "https://doc.rust-lang.org/book/ch05-03-method-syntax.html",
+    ),
+    (
+        "rust.struct.update",
+        "The Rust Book — Creating Instances from Other Instances with Struct Update Syntax",
+        "https://doc.rust-lang.org/book/ch05-01-defining-structs.html#creating-instances-from-other-instances-with-struct-update-syntax",
+    ),
 ];
 
 /// The best page for one concept, if the table knows the namespace.
@@ -437,8 +417,8 @@ mod tests {
             for_concept("rust.hashmap.entry").unwrap().url
         );
         assert_ne!(
-            for_concept("rust.operator.compound").unwrap().url,
-            for_concept("rust.operator.not").unwrap().url
+            for_concept("rust.ownership.move").unwrap().url,
+            for_concept("rust.borrow.str_param").unwrap().url
         );
     }
 
