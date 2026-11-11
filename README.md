@@ -39,7 +39,13 @@ Point it at a reviewer once (see [Choosing a reviewer](#choosing-a-reviewer)):
 
 ```sh
 export READCODE_AGENT="opencode acp"   # or: export READCODE_API_KEY=sk-...
+readcode models                        # the ids your agent offers
+export READCODE_MODEL="deepseek/deepseek-v4-pro"
 ```
+
+For ACP, `READCODE_MODEL` is not optional: `readcode` will not grade with whatever your agent
+defaults to, because that default is frequently a free shared-queue model and finding out
+afterwards that something you did not choose marked your answers is worse than being asked.
 
 Then everyday:
 
@@ -219,6 +225,12 @@ Grading needs a model, so the first run needs one of two things set up:
 |---|---|---|
 | `acp` | an ACP agent on your machine | your own agent and subscription grade; no API key |
 | `api` | one API key | a model grades over one HTTP call |
+
+**An ACP agent needs a pinned model.** `--model <id>` or `READCODE_MODEL=<id>`, with no
+fallback: the agent's own default is never used, even when it is the only thing available.
+`readcode models` lists what the agent offers and marks the free tiers, so the choice is
+made with the price in view. If you ask for a model the agent does not have, the run stops
+rather than grading with something else.
 
 Auto-detection uses a configured agent first, then a key. With neither, `readcode`
 stops and tells you which exports to set — `status`, `list` and `check` work either way.
@@ -440,7 +452,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 174 tests, no network, no agent
+cargo test                        # 175 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

@@ -633,7 +633,9 @@ fn main() -> Result<()> {
             println!();
             println!(
                 "{}",
-                style.dim("pin one with --model <id>, or READCODE_MODEL=<id>")
+                style.dim(
+                    "pin one with --model <id> or READCODE_MODEL=<id>; readcode never grades with the agent's default"
+                )
             );
             Ok(())
         }
@@ -777,6 +779,10 @@ fn build_reviewer(cli: &Cli, backend: Backend, agent_cwd: PathBuf) -> Result<Box
             if let Some(model) = &cli.model {
                 reviewer.model = Some(model.clone());
             }
+            // Fail here, before the level question and before a single answer is
+            // typed: the reviewer would refuse later anyway, and losing a sitting
+            // to it is unforgivable.
+            reviewer.require_model()?;
             Ok(Box::new(reviewer))
         }
     }

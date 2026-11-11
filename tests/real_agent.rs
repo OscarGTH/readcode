@@ -27,6 +27,10 @@ fn grades_through_the_real_agent() {
     std::fs::create_dir_all(&cwd).unwrap();
 
     let reviewer = AcpReviewer::from_env(cwd);
+    assert!(
+        reviewer.model.is_some(),
+        "set READCODE_MODEL to run this test — readcode refuses to grade with an agent's default model"
+    );
     println!("spawning: {} {:?}", reviewer.program, reviewer.args);
     let grade = reviewer.grade(snippet, &prompts, &annotations).unwrap();
 

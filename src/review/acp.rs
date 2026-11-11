@@ -598,33 +598,25 @@ impl AcpReviewer {
         client.initialize()?;
         client.new_session(&self.cwd)?;
 
-        match &self.model {
-            Some(model) => {
-                // An explicit choice is the only way a model is selected. If the
-                // agent refuses it, say so and stop rather than grading on
-                // something the user did not ask for.
-                client
-                    .set_config_option("model", model)
-                    .with_context(|| format!("the agent refused the model `{model}`"))?;
-            }
-            None => {
-                // Never switch silently. Name what it will use and how to pin it.
-                if let Some((current, options)) = model_options(&client.config_options) {
-                    let name = options
-                        .iter()
-                        .find(|option| option.value == current)
-                        .map(|option| option.name.clone())
-                        .unwrap_or_else(|| current.clone());
-                    if is_free_model(&current, &name) {
-                        eprintln!(
-                            "readcode: grading with `{current}` — a free shared-queue model, so expect slow, variable answers. Pin one with `--model <id>` or READCODE_MODEL; `readcode models` lists what this agent offers."
-                        );
-                    }
-                }
-            }
-        }
-
+        // Nothing is set here: an explicit model is applied by `grade` and `ask`,
+        // which refuse to run without one. This method is also how `readcode
+        // models` opens a session, and that has to work before a model is chosen.
         Ok(client)
+    }
+
+    /// A session is only opened for grading once the learner has named a model.
+    ///
+    /// The agent's own default is not used, even as a fallback: it is often a
+    /// free shared-queue model, and finding out after the fact that your answers
+    /// were graded by something you did not choose is worse than being asked.
+    pub fn require_model(&self) -> Result<()> {
+        match self.model.as_deref().map(str::trim) {
+            Some(model) if !model.is_empty() => Ok(()),
+            _ => bail!(
+                "no model pinned for the ACP reviewer — readcode will not grade with whatever `{}` defaults to, because that is often a free shared-queue model.\n\n  readcode models        # what this agent offers\n  readcode --model <id>  # or: export READCODE_MODEL=<id>",
+                self.program
+            ),
+        }
     }
 
     /// Opens a session and reports the models this agent offers. No prompt is
@@ -672,18 +664,15 @@ impl Reviewer for AcpReviewer {
         prompts: &[Prompt],
         annotations: &[Annotation],
     ) -> Result<Grade> {
+        self.require_model()?;
         let mut client = self.connect()?;
         let prompt = contract::prime(&contract::task(snippet, prompts, annotations));
         let text = client.prompt(&prompt)?;
         let raw = parse_json_object(&text)
             .with_context(|| format!("the agent ({}) did not return a grade", client.agent_name))?;
         let mut grade = Grade::from_raw(prompts, raw, &self.name())?;
-        // When nothing was pinned, name the model the session reports it is on.
-        // When one was pinned, keep it: `current_model` reflects the session's
-        // opening config, not the option we set.
-        if self.model.is_none() {
-            grade.reviewer = self.label(client.current_model().as_deref());
-        }
+        // The label names the pinned model, not the session's opening config.
+        grade.reviewer = self.label(self.model.as_deref());
         if !client.refusals.is_empty() {
             grade.summary = format!(
                 "{} (refused tool use: {})",
@@ -695,6 +684,7 @@ impl Reviewer for AcpReviewer {
     }
 
     fn ask(&self, task: &str) -> Result<String> {
+        self.require_model()?;
         let mut client = self.connect()?;
         client.prompt(&contract::prime(task))
     }
@@ -761,6 +751,27 @@ concepts = ["rust.binding"]
             }
             other => panic!("expected an error response, got {:?}", other.is_some()),
         }
+    }
+
+    #[test]
+    fn grading_without_a_pinned_model_is_refused_before_anything_spawns() {
+        let mut reviewer = AcpReviewer::from_env(std::env::temp_dir());
+        reviewer.model = None;
+        let error = reviewer.require_model().unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("no model pinned"), "{message}");
+        assert!(message.contains("readcode models"), "{message}");
+        assert!(
+            message.contains("will not grade with whatever"),
+            "it should say the default is not used: {message}"
+        );
+
+        // Nor does a blank model count as a choice.
+        reviewer.model = Some("   ".to_string());
+        assert!(reviewer.require_model().is_err());
+
+        reviewer.model = Some("deepseek/deepseek-v4-pro".to_string());
+        reviewer.require_model().unwrap();
     }
 
     #[test]
