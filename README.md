@@ -35,17 +35,36 @@ install — no data files, no network at runtime unless you choose a model or ag
 
 ## Quick start
 
-Point it at a reviewer once (see [Choosing a reviewer](#choosing-a-reviewer)):
+Install it, run it, and the first run sets itself up:
 
 ```sh
-export READCODE_AGENT="opencode acp"   # or: export READCODE_API_KEY=sk-...
-readcode models                        # the ids your agent offers
-export READCODE_MODEL="deepseek/deepseek-v4-pro"
+readcode
 ```
 
-For ACP, `READCODE_MODEL` is not optional: `readcode` will not grade with whatever your agent
-defaults to, because that default is frequently a free shared-queue model and finding out
-afterwards that something you did not choose marked your answers is worse than being asked.
+It asks which language you want, **who should grade you** (an agent already on your machine,
+or an API key), and **which model** — then writes those to `~/.local/share/readcode/config.toml`
+so no second run needs a flag or an export. It finishes by listing the commands worth knowing.
+
+```
+First, how should your answers be graded?
+  1 · an agent already on this machine (opencode acp)
+  2 · an API key (set READCODE_API_KEY afterwards)
+reviewer 1-2 [1]:
+Asking that agent which models it offers…
+  1 · deepseek/deepseek-v4-pro  DeepSeek/DeepSeek V4 Pro
+  ...
+model 1-14 [1]:
+saved · ~/.local/share/readcode/config.toml
+```
+
+The model is never guessed: `readcode` will not grade with whatever your agent defaults to,
+because that default is frequently a free shared-queue model, and finding out afterwards that
+something you did not choose marked your answers is worse than being asked once.
+
+`readcode setup` reopens the wizard later. Environment variables still win over the file, so
+`READCODE_MODEL=… readcode` overrides it for one run, and the API key is deliberately *not*
+stored — it stays in `READCODE_API_KEY`, because a settings file ends up in dotfiles repos and
+bug reports.
 
 Then everyday:
 
@@ -55,6 +74,7 @@ readcode status     # what you have mastered, what is due
 readcode list       # the snippets available, with their levels
 readcode lang       # the languages in the corpus, and how far you are in each
 readcode level      # what level you are reading at
+readcode setup      # change reviewer, agent or model
 readcode draft f.rs # turn a file into a draft snippet with your reviewer
 readcode models     # which models your agent offers
 ```
@@ -123,13 +143,23 @@ time.
 
 The code fills the screen, you answer in your own words, and your answer lands **on the
 code**: each note appears above the line it explains, as a `//` comment, so the snippet
-turns into your own annotated copy as you go.
+turns into your own annotated copy as you go. The question sits directly under the lines it
+is about, marked with `└`, so the thing you are answering is never further away than the code
+you are reading.
+
+![The question under the lines it asks about, and the notes written above them](docs/tui.png)
 
 - `Enter` submits an answer and moves to the next question
 - `Enter` on an empty answer skips that question (an honest "no idea" is fine)
 - `Ctrl-J` adds a newline when one sentence is not enough
-- `Ctrl-B` goes back and reopens the previous answer
+- `Ctrl-B` goes back and reopens the previous answer, keeping what you had typed
 - `Esc` stops without saving anything
+
+When the last prompt is answered you get a **check screen** rather than a model call: every
+question with what you wrote, the one you are on marked with `>`. `j`/`k` moves, `Enter`
+reopens the selected answer with its text in place, and nothing is sent until `Ctrl-S`.
+
+![The check screen: every answer before it is graded](docs/tui-confirm.png)
 
 When the last question is answered it grades you per concept and shows you the review —
 what was right, what was thin, and what you missed:

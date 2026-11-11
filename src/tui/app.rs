@@ -13,6 +13,9 @@ use crate::snippet::{Asks, Prompt, Snippet};
 pub enum Phase {
     /// Answering the prompts.
     Annotate,
+    /// Every prompt has an answer; the learner checks them before spending a
+    /// model call, and may reopen any of them.
+    Confirm,
     /// Answers are in, the reviewer is working.
     Grading,
     /// Verdicts are in and scrollable.
@@ -49,6 +52,12 @@ pub struct App<'a> {
     pub cursor: usize,
     /// First visible row of the body pane.
     pub scroll: usize,
+    /// Which answered prompt the confirmation list has selected.
+    pub confirm_index: usize,
+    /// True when the current prompt was reopened from the confirmation list, so
+    /// finishing it returns there instead of walking forward through answered
+    /// prompts.
+    editing: bool,
     pub grade: Option<Grade>,
     pub error: Option<String>,
 }
@@ -67,6 +76,8 @@ impl<'a> App<'a> {
             input: Vec::new(),
             cursor: 0,
             scroll: 0,
+            confirm_index: 0,
+            editing: false,
             grade: None,
             error: None,
         }
@@ -148,8 +159,7 @@ impl<'a> App<'a> {
         self.cursor = 0;
     }
 
-    /// Stores the typed answer and moves on. Returns `Action::Grade` when there
-    /// is nothing left to ask.
+    /// Stores the typed answer and moves on.
     fn submit(&mut self) -> Action {
         let typed = self.input_text().trim().to_string();
         if let Some(answer) = self.answers.get_mut(self.index) {
@@ -157,13 +167,7 @@ impl<'a> App<'a> {
         }
         self.clear();
         self.scroll = 0;
-        if self.index + 1 >= self.prompts.len() {
-            self.phase = Phase::Grading;
-            Action::Grade
-        } else {
-            self.index += 1;
-            Action::None
-        }
+        self.advance()
     }
 
     /// Skips the current prompt without answering it.
@@ -176,16 +180,58 @@ impl<'a> App<'a> {
     }
 
     fn advance(&mut self) -> Action {
+        if self.editing {
+            // Reopened from the list: go back to it rather than forward through
+            // prompts that were already answered.
+            self.editing = false;
+            self.phase = Phase::Confirm;
+            return Action::None;
+        }
         if self.index + 1 >= self.prompts.len() {
-            self.phase = Phase::Grading;
-            Action::Grade
+            // Nothing left to ask, but grading costs a model call and the answers
+            // cannot be changed afterwards: show them first.
+            self.phase = Phase::Confirm;
+            self.confirm_index = 0;
         } else {
             self.index += 1;
-            Action::None
+            // Coming forward again onto a prompt that was already answered brings
+            // its text back, so going back and forth never means retyping.
+            self.input = self.answers[self.index].chars().collect();
+            self.cursor = self.input.len();
         }
+        Action::None
+    }
+
+    /// Reopens an answered prompt, from the confirmation list.
+    pub fn edit(&mut self, index: usize) {
+        if index >= self.prompts.len() {
+            return;
+        }
+        self.index = index;
+        self.input = self.answers[index].chars().collect();
+        self.cursor = self.input.len();
+        self.scroll = 0;
+        self.editing = true;
+        self.phase = Phase::Annotate;
+    }
+
+    /// Sends the answers to the reviewer.
+    fn submit_for_grading(&mut self) -> Action {
+        self.phase = Phase::Grading;
+        self.scroll = 0;
+        Action::Grade
     }
 
     fn back(&mut self) {
+        // Keep the half-written answer: coming back to fix an earlier one must not
+        // throw away the one being written, which is what made editing feel like
+        // discarding the sitting.
+        let typed = self.input_text().trim().to_string();
+        if !typed.is_empty()
+            && let Some(answer) = self.answers.get_mut(self.index)
+        {
+            *answer = typed;
+        }
         if self.index > 0 {
             self.index -= 1;
             self.input = self.answers[self.index].chars().collect();
@@ -230,6 +276,7 @@ impl<'a> App<'a> {
     pub fn on_key(&mut self, key: Key) -> Action {
         match self.phase {
             Phase::Annotate => self.on_key_annotate(key),
+            Phase::Confirm => self.on_key_confirm(key),
             Phase::Grading => match key {
                 Key::CtrlC => Action::Abort,
                 _ => Action::None,
@@ -291,7 +338,37 @@ impl<'a> App<'a> {
                 Action::None
             }
             Key::Escape | Key::CtrlC => Action::Abort,
-            Key::Other | Key::Up | Key::Down | Key::PageUp | Key::PageDown => Action::None,
+            Key::Submit | Key::Other | Key::Up | Key::Down | Key::PageUp | Key::PageDown => {
+                Action::None
+            }
+        }
+    }
+
+    /// The confirmation list: move, reopen one, or send them all.
+    fn on_key_confirm(&mut self, key: Key) -> Action {
+        let last = self.prompts.len().saturating_sub(1);
+        match key {
+            Key::Up | Key::Char('k') => {
+                self.confirm_index = self.confirm_index.saturating_sub(1);
+                Action::None
+            }
+            Key::Down | Key::Char('j') => {
+                self.confirm_index = (self.confirm_index + 1).min(last);
+                Action::None
+            }
+            Key::Enter => {
+                self.edit(self.confirm_index);
+                Action::None
+            }
+            Key::Submit => self.submit_for_grading(),
+            // The same chord that goes back while answering: straight to the last
+            // answer, which is the one people usually want to change.
+            Key::Back => {
+                self.edit(last);
+                Action::None
+            }
+            Key::Escape | Key::CtrlC => Action::Abort,
+            _ => Action::None,
         }
     }
 
@@ -342,6 +419,8 @@ pub enum Key {
     PageDown,
     Clear,
     Back,
+    /// Ctrl-S: the answers are ready to be graded.
+    Submit,
     Escape,
     CtrlC,
     Other,
@@ -400,19 +479,89 @@ mod tests {
     }
 
     #[test]
-    fn the_last_answer_asks_for_grading() {
+    fn the_last_answer_opens_the_confirmation_rather_than_grading() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("rust-005").unwrap().clone();
         let mut app = app(&snippet);
         for _ in 0..app.prompts.len() {
             type_text(&mut app, "something");
-            let action = app.on_key(Key::Enter);
-            if action == Action::Grade {
-                assert_eq!(app.phase, Phase::Grading);
-                return;
-            }
+            assert_eq!(app.on_key(Key::Enter), Action::None);
         }
-        panic!("the sitting never reached grading");
+        // Nothing has been spent yet, and every answer is still editable.
+        assert_eq!(app.phase, Phase::Confirm);
+        assert_eq!(
+            app.answers
+                .iter()
+                .filter(|a| a.as_str() == "something")
+                .count(),
+            app.prompts.len()
+        );
+
+        assert_eq!(app.on_key(Key::Submit), Action::Grade);
+        assert_eq!(app.phase, Phase::Grading);
+    }
+
+    #[test]
+    fn an_answer_can_be_reopened_from_the_confirmation_and_stays_changed() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-005").unwrap().clone();
+        let mut app = app(&snippet);
+        for index in 0..app.prompts.len() {
+            type_text(&mut app, &format!("answer {index}"));
+            app.on_key(Key::Enter);
+        }
+
+        // Move to the second entry and reopen it.
+        app.on_key(Key::Down);
+        assert_eq!(app.confirm_index, 1);
+        assert_eq!(app.on_key(Key::Enter), Action::None);
+        assert_eq!(app.phase, Phase::Annotate);
+        assert_eq!(app.index, 1);
+        // It reopens with what was written, ready to be corrected.
+        assert_eq!(app.input_text(), "answer 1");
+
+        type_text(&mut app, " (fixed)");
+        app.on_key(Key::Enter);
+        assert_eq!(app.answers[1], "answer 1 (fixed)");
+        // And the other answers are untouched.
+        assert_eq!(app.answers[0], "answer 0");
+        assert_eq!(app.phase, Phase::Confirm);
+    }
+
+    #[test]
+    fn going_back_keeps_what_was_being_typed() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-005").unwrap().clone();
+        let mut app = app(&snippet);
+
+        type_text(&mut app, "first");
+        app.on_key(Key::Enter);
+        type_text(&mut app, "half-written");
+        // Fix the first answer, then come forward again: the half-written one
+        // must still be there rather than lost with the keystroke.
+        app.on_key(Key::Back);
+        assert_eq!(app.index, 0);
+        assert_eq!(app.input_text(), "first");
+        app.on_key(Key::Enter);
+        assert_eq!(app.answers[1], "half-written");
+        assert_eq!(app.input_text(), "half-written");
+    }
+
+    #[test]
+    fn the_confirmation_closes_over_answers_that_were_skipped() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-005").unwrap().clone();
+        let mut app = app(&snippet);
+        for _ in 0..app.prompts.len() {
+            app.on_key(Key::Enter); // Enter on an empty answer skips it
+        }
+        assert_eq!(app.phase, Phase::Confirm);
+        // Skipped prompts are sent as empty, which the reviewer marks unknown
+        // rather than wrong; the learner can still go back and fill one in.
+        assert!(app.answers.iter().all(|answer| answer.is_empty()));
+        app.on_key(Key::Back);
+        assert_eq!(app.index, app.prompts.len() - 1);
+        assert_eq!(app.phase, Phase::Annotate);
     }
 
     #[test]

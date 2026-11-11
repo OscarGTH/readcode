@@ -105,10 +105,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
         return;
     }
 
+    let input_height = match app.phase {
+        Phase::Annotate | Phase::Grading => 6,
+        Phase::Confirm | Phase::Review => 1,
+    };
     let [header, body, ask, footer] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(5),
-        Constraint::Length(if app.phase == Phase::Review { 1 } else { 7 }),
+        Constraint::Length(input_height),
         Constraint::Length(1),
     ])
     .areas(area);
@@ -131,6 +135,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
                 )),
             ]));
             frame.render_widget(waiting, ask);
+        }
+        Phase::Confirm => {
+            draw_confirm(frame, app, body);
         }
         Phase::Review => {
             draw_review(frame, app, body);
@@ -160,7 +167,7 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
     // of sitting this is, while the title says what the code is about.
     let language = app.snippet.language.clone();
     let progress = match app.phase {
-        Phase::Review => language,
+        Phase::Review | Phase::Confirm => language,
         _ => format!(
             "{language} · {mode} · {}/{}",
             app.index + 1,
@@ -195,6 +202,9 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
 
     let mut rows: Vec<Line> = Vec::new();
     let mut focus_row = 0usize;
+    // The last row the focus needs kept on screen: the question sits below the code
+    // it is about, so scrolling to the code row alone can hide the question.
+    let mut focus_end = 0usize;
     for (index, _line) in lines.iter().enumerate() {
         let number = index + 1;
 
@@ -239,6 +249,26 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
         }
         rows.push(Line::from(spans));
 
+        // The question, under the code it asks about. It used to sit in the panel
+        // at the bottom, where a long one wrapped out of view and the eye at the
+        // code never saw it at all.
+        if app.phase == Phase::Annotate
+            && focus.is_some_and(|(_, end)| number == end)
+            && let Some(prompt) = app.current()
+        {
+            for (piece_index, piece) in wrap(&prompt.ask, text_width.saturating_sub(3))
+                .into_iter()
+                .enumerate()
+            {
+                let lead = if piece_index == 0 { "└ " } else { "  " };
+                rows.push(Line::from(vec![
+                    Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
+                    Span::styled(format!("{lead}{piece}"), Theme::title()),
+                ]));
+            }
+            focus_end = rows.len();
+        }
+
         // A note about a whole block goes after the block's last line, labelled
         // with the span, so it never reads as a comment on its first line.
         for (start, end, note) in notes
@@ -271,11 +301,13 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
     let height = area.height as usize;
     let mut scroll = app.scroll;
     if follow {
-        // Keep the prompt being answered on screen, with a little air below it.
+        // Keep the prompt being answered on screen — the code, the question under
+        // it, and a little air below.
+        let bottom = focus_end.max(focus_row) + 1;
         if focus_row < scroll {
             scroll = focus_row;
-        } else if focus_row + 3 >= scroll + height {
-            scroll = (focus_row + 3).saturating_sub(height);
+        } else if bottom >= scroll + height {
+            scroll = bottom.saturating_sub(height) + 1;
         }
     }
     let scroll = scroll.min(rows.len().saturating_sub(1)) as u16;
@@ -308,16 +340,14 @@ fn draw_ask(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let [question, input] =
-        Layout::vertical([Constraint::Length(2), Constraint::Min(3)]).areas(inner);
+    let [hint, input] = Layout::vertical([Constraint::Length(1), Constraint::Min(3)]).areas(inner);
 
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            format!(" {}", prompt.ask),
-            Theme::title(),
-        )))
-        .wrap(Wrap { trim: false }),
-        question,
+            " your words · Enter submits · Ctrl-J newline · Ctrl-B back",
+            Theme::dim(),
+        ))),
+        hint,
     );
 
     let text = cursor_text(app);
@@ -353,6 +383,91 @@ fn cursor_text(app: &App) -> Text<'static> {
     }
     lines.push(Line::from(current));
     Text::from(lines)
+}
+
+/// The answers, before they cost a model call.
+///
+/// Grading is one shot: the reviewer cannot be asked twice, and an answer typed in
+/// a hurry is the one you most want back. So every prompt is listed with what was
+/// written, the selected one can be reopened, and nothing is sent until Ctrl-S.
+fn draw_confirm(frame: &mut Frame, app: &App, area: Rect) {
+    let width = area.width as usize;
+    let mut rows: Vec<Line> = Vec::new();
+    rows.push(Line::from(Span::styled(
+        " Check your answers · Enter reopens one · Ctrl-S sends them to be graded",
+        Theme::title(),
+    )));
+    rows.push(Line::raw(""));
+
+    let mut selected_start = 0usize;
+    for (index, prompt) in app.prompts.iter().enumerate() {
+        let selected = index == app.confirm_index;
+        let entry_start = rows.len();
+        if selected {
+            selected_start = entry_start;
+        }
+
+        let span = if prompt.start == prompt.end {
+            format!("line {}", prompt.start)
+        } else {
+            format!("lines {}-{}", prompt.start, prompt.end)
+        };
+        // The selection is carried by the mark and by the band on the header row
+        // only: banding the answer too put green text on a light background and
+        // made the entry harder to read, not easier.
+        let mark = if selected { ">" } else { " " };
+        let head = format!("{mark} {} {span}", index + 1);
+        let concepts = format!("  {}", prompt.concepts.join("  "));
+        let mut head_spans = vec![
+            Span::styled(head.clone(), Theme::gutter()),
+            Span::styled(concepts.clone(), Theme::hint()),
+        ];
+        if selected {
+            let used = head.chars().count() + concepts.chars().count();
+            head_spans = head_spans
+                .into_iter()
+                .map(|span| {
+                    let style = span.style.patch(Theme::current_bg());
+                    Span::styled(span.content, style)
+                })
+                .collect();
+            // Pad past the pane's width, or the band stops at the last glyph and
+            // reads as a ragged highlight. The paragraph clips the excess.
+            head_spans.push(Span::styled(
+                " ".repeat(width.saturating_sub(used) + 8),
+                Theme::current_bg(),
+            ));
+        }
+        rows.push(Line::from(head_spans));
+
+        let answer = app.answers.get(index).map(String::as_str).unwrap_or("");
+        if answer.trim().is_empty() {
+            rows.push(Line::from(vec![
+                Span::styled("    ".to_string(), Theme::gutter()),
+                Span::styled("— not answered —".to_string(), Theme::dim()),
+            ]));
+        } else {
+            for piece in wrap(answer, width.saturating_sub(6)) {
+                rows.push(Line::from(vec![
+                    Span::styled("    ".to_string(), Theme::gutter()),
+                    Span::styled(piece, Theme::note()),
+                ]));
+            }
+        }
+        rows.push(Line::raw(""));
+    }
+
+    // Keep the selected entry on screen when the list is longer than the pane.
+    let height = area.height as usize;
+    let scroll = if selected_start + 4 >= height {
+        (selected_start + 4).saturating_sub(height)
+    } else {
+        0
+    };
+    frame.render_widget(
+        Paragraph::new(Text::from(rows)).scroll((scroll as u16, 0)),
+        area,
+    );
 }
 
 /// The review: for each prompt, the code it was about, what the learner wrote,
@@ -690,6 +805,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         Phase::Annotate => {
             " Enter next · Ctrl-J newline · Ctrl-B back · Enter on empty skips · Esc quits"
         }
+        Phase::Confirm => " j/k choose · Enter reopens · Ctrl-S grades · Esc quits",
         Phase::Grading => " grading…",
         Phase::Review if app.error.is_some() => " r retries grading · Enter gives up",
         Phase::Review => " j/k scroll · Enter finishes · Esc discards",
@@ -1195,6 +1311,12 @@ mod tests {
                 app.on_key(Key::Enter);
             }
 
+            // The last answer opens the confirmation; step back into the code to
+            // read the notes, which is what this test is about.
+            if app.phase == Phase::Confirm {
+                app.edit(prompts.len() - 1);
+            }
+
             // Tall enough that nothing is scrolled out of the way.
             let screen = screen(&app, 120, 90);
             let rows: Vec<&str> = screen.lines().collect();
@@ -1239,5 +1361,106 @@ mod tests {
     fn a_blank_line_in_a_note_is_kept() {
         let wrapped = wrap("first\n\nsecond", 40);
         assert_eq!(wrapped, vec!["first", "", "second"]);
+    }
+
+    #[test]
+    fn the_question_sits_under_the_code_it_asks_about() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-006").unwrap();
+        let app = App::new(
+            snippet,
+            snippet.prompts(Asks::Blocks),
+            Asks::Blocks,
+            "check".into(),
+        );
+        let screen = screen(&app, 96, 24);
+        let rows: Vec<&str> = screen.lines().collect();
+
+        // The question wraps, so match its opening words rather than the whole
+        // string — which is itself the point: it is wrapped, not clipped.
+        let opening: String = app.prompts[0]
+            .ask
+            .split_whitespace()
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let ask_row = rows
+            .iter()
+            .position(|row| row.contains(&opening))
+            .unwrap_or_else(|| panic!("the question is not on screen:\n{screen}"));
+        // Directly below the last line of the span it asks about, not in the
+        // panel at the bottom where it used to be clipped by long questions.
+        let last_code = rows
+            .iter()
+            .position(|row| row.contains(&format!("{} │", app.prompts[0].end)))
+            .unwrap_or_else(|| panic!("no code row for the span:\n{screen}"));
+        assert!(
+            ask_row == last_code + 1,
+            "the question is not under its code (code {last_code}, ask {ask_row}):\n{screen}"
+        );
+        assert!(rows[ask_row].contains('└'), "{screen}");
+    }
+
+    #[test]
+    fn a_long_question_is_not_clipped() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-004").unwrap();
+        let app = App::new(
+            snippet,
+            snippet.prompts(Asks::Blocks),
+            Asks::Blocks,
+            "check".into(),
+        );
+        let screen = screen(&app, 80, 30);
+        let ask = app.prompts[0].ask.as_str();
+        // The last words of the question have to be there: a fixed two-row area
+        // used to cut long questions off mid-sentence.
+        let tail: String = ask
+            .chars()
+            .rev()
+            .take(18)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        assert!(
+            screen.contains(&tail),
+            "the question was clipped:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn the_confirmation_lists_every_answer_before_grading() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-006").unwrap();
+        let mut app = App::new(
+            snippet,
+            snippet.prompts(Asks::Blocks),
+            Asks::Blocks,
+            "check".into(),
+        );
+        for index in 0..app.prompts.len() {
+            for char_ in format!("answer number {index}").chars() {
+                app.on_key(Key::Char(char_));
+            }
+            app.on_key(Key::Enter);
+        }
+        assert_eq!(app.phase, Phase::Confirm);
+
+        let screen = screen(&app, 96, 26);
+        for index in 0..app.prompts.len() {
+            assert!(
+                screen.contains(&format!("answer number {index}")),
+                "answer {index} is missing from the check:\n{screen}"
+            );
+        }
+        assert!(screen.contains("Ctrl-S"), "{screen}");
+        // The first entry is selected, and the selection is visible as a band.
+        assert!(
+            screen
+                .lines()
+                .any(|row| row.trim_start().starts_with("> 1")),
+            "{screen}"
+        );
     }
 }
