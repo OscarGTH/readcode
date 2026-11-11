@@ -647,6 +647,11 @@ impl AcpReviewer {
         client.initialize()?;
         client.new_session(&self.cwd)?;
 
+        // Check the id against what the agent offers *before* applying it: an
+        // unknown id makes `set_config_option` fail with a bare "refused", while
+        // the list of what it does accept is the useful answer.
+        self.verify_model(&client)?;
+
         // Apply the pinned model. Without this the session runs on whatever the
         // agent defaults to, which is exactly the silent fallback 0.10.1 set out
         // to remove — and it looked fine, because the reviewer's own label came
