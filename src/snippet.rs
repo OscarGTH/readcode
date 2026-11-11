@@ -75,10 +75,10 @@ pub const MAX_LEVEL: u8 = 5;
 /// What each rung means, in the learner's terms rather than the language's.
 pub const LEVELS: [&str; MAX_LEVEL as usize] = [
     "just started — values, arithmetic, printing",
-    "small functions — branches, loops, one borrow at a time",
-    "whole modules — structs, methods, iterators, error handling",
-    "unfamiliar crates — traits, generics, lifetimes",
-    "reads Rust for a living",
+    "small functions — branches, loops, one thing at a time",
+    "whole files — structs, methods, iteration, error handling",
+    "unfamiliar code — generics, traits, lifetimes, other people's idioms",
+    "reads this language for a living",
 ];
 
 /// The band of levels a snippet is written for.
@@ -206,7 +206,12 @@ impl Prompt {
 
 impl Snippet {
     pub fn parse(text: &str) -> Result<Self> {
-        let snippet: Snippet = toml::from_str(text)?;
+        let mut snippet: Snippet = toml::from_str(text)?;
+        // Go is written with tabs. A tab byte in a terminal cell moves the cursor
+        // to the next stop, so it does not occupy one column and every line after
+        // it loses its gutter alignment. Expand once, at parse time, so the
+        // terminal view, the TUI and the grading contract all see the same code.
+        snippet.code = snippet.code.replace('\t', "    ");
         Ok(snippet)
     }
 

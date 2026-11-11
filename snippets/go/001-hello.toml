@@ -1,0 +1,33 @@
+id = "go-001"
+language = "go"
+title = "Hello, with a variable in between"
+level = 1
+intro = "The smallest complete Go program: a package, an import, and one line of output."
+code = '''
+package main
+
+import "fmt"
+
+func main() {
+	name := "ferris"
+	fmt.Println("hello,", name)
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What does `package main` tell the toolchain?"
+concepts = ["go.package.main"]
+notes = { "go.package.main" = "A package named `main` is compiled into an executable, and its `main` function is the entry point." }
+
+[[blocks]]
+lines = [2, 4]
+ask = "What does the import make available, and where does the name `fmt` come from?"
+concepts = ["go.import"]
+notes = { "go.import" = "`import \"fmt\"` brings the package in under its own name, so `fmt.Println` refers to it." }
+
+[[blocks]]
+lines = [5, 8]
+ask = "What is `name` — its type, and how it got one?"
+concepts = ["go.short_var", "go.fmt.println"]
+notes = { "go.short_var" = "`name := \"ferris\"` declares and assigns in one step, inferring `string` from the literal.", "go.fmt.println" = "`fmt.Println` writes its arguments separated by spaces and appends a newline." }

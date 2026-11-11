@@ -156,9 +156,16 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
     ]);
     frame.render_widget(Paragraph::new(title), left);
 
+    // The language rides with the mode, not with the title: both say what kind
+    // of sitting this is, while the title says what the code is about.
+    let language = app.snippet.language.clone();
     let progress = match app.phase {
-        Phase::Review => String::new(),
-        _ => format!("{} · {}/{}", mode, app.index + 1, app.prompts.len()),
+        Phase::Review => language,
+        _ => format!(
+            "{language} · {mode} · {}/{}",
+            app.index + 1,
+            app.prompts.len()
+        ),
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
@@ -181,7 +188,10 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
     let text_width = width.saturating_sub(gutter + 3);
 
     let focus = app.current().map(|prompt| (prompt.start, prompt.end));
-    let tokens = highlight::tokens(&lines.iter().map(String::as_str).collect::<Vec<_>>());
+    let tokens = highlight::tokens_in(
+        &snippet.language,
+        &lines.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
 
     let mut rows: Vec<Line> = Vec::new();
     let mut focus_row = 0usize;
@@ -381,7 +391,10 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
 
     let width = area.width as usize;
     let code: Vec<String> = app.snippet.code.lines().map(str::to_string).collect();
-    let tokens = highlight::tokens(&code.iter().map(String::as_str).collect::<Vec<_>>());
+    let tokens = highlight::tokens_in(
+        &app.snippet.language,
+        &code.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
     let gutter = app.snippet.line_count().to_string().len().max(2);
 
     let mut rows: Vec<Line> = Vec::new();
@@ -776,7 +789,7 @@ mod tests {
     #[test]
     fn the_code_is_shown_with_the_current_line_marked() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let app = app_with_answer(snippet);
         let screen = screen(&app, 90, 24);
 
@@ -795,7 +808,7 @@ mod tests {
     #[test]
     fn an_answer_shows_above_its_line_as_a_note() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let mut app = App::new(
             snippet,
             snippet.prompts(Asks::Lines),
@@ -820,7 +833,7 @@ mod tests {
     #[test]
     fn a_block_note_sits_after_the_block_and_says_which_lines_it_covers() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("004").unwrap();
+        let snippet = corpus.find("rust-004").unwrap();
         let prompts = snippet.prompts(crate::snippet::Asks::Blocks);
         let mut app = App::new(
             snippet,
@@ -846,7 +859,7 @@ mod tests {
     #[test]
     fn a_line_note_stays_above_its_own_line() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let mut app = App::new(
             snippet,
             snippet.prompts(crate::snippet::Asks::Lines),
@@ -866,7 +879,7 @@ mod tests {
     #[test]
     fn the_question_and_the_typed_answer_are_visible() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let mut app = app_with_answer(snippet);
         for char_ in "grows the map".chars() {
             app.on_key(Key::Char(char_));
@@ -887,7 +900,7 @@ mod tests {
     #[test]
     fn a_long_note_wraps_instead_of_being_cut_off() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let mut app = App::new(
             snippet,
             snippet.prompts(Asks::Lines),
@@ -911,7 +924,7 @@ mod tests {
     #[test]
     fn the_review_shows_the_code_the_answer_and_the_lesson() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let mut app = app_with_answer(snippet);
         let grade = Grade {
             reviewer: "acp:opencode".into(),
@@ -975,7 +988,7 @@ mod tests {
     #[test]
     fn a_correct_answer_still_gets_the_explanation() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("006").unwrap();
+        let snippet = corpus.find("rust-006").unwrap();
         let mut app = app_with_answer(snippet);
         let prompt = app.prompts[0].clone();
         let grade = Grade {
@@ -1011,7 +1024,7 @@ mod tests {
     #[test]
     fn every_other_entry_is_banded_right_to_the_edge() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("006").unwrap();
+        let snippet = corpus.find("rust-006").unwrap();
         let mut app = app_with_answer(snippet);
         let grade = Grade {
             reviewer: "acp:opencode".into(),
@@ -1064,7 +1077,7 @@ mod tests {
     fn a_shared_topic_is_read_more_once() {
         let corpus = Corpus::builtin().unwrap();
         // 006's lines 2 and 3 both teach mutability, so both map to one page.
-        let snippet = corpus.find("006").unwrap();
+        let snippet = corpus.find("rust-006").unwrap();
         let mut app = app_with_answer(snippet);
         app.on_key(Key::Char('x'));
         app.on_key(Key::Enter);
@@ -1103,7 +1116,7 @@ mod tests {
     fn a_long_block_shows_the_head_and_tail_of_its_code() {
         let corpus = Corpus::builtin().unwrap();
         // rust-004's third block is seven lines: longer than the review shows.
-        let snippet = corpus.find("004").unwrap();
+        let snippet = corpus.find("rust-004").unwrap();
         let prompts = snippet.prompts(crate::snippet::Asks::Blocks);
         let mut app = App::new(
             snippet,
@@ -1138,7 +1151,7 @@ mod tests {
     #[test]
     fn a_failed_grade_says_so_and_offers_another_go() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let mut app = app_with_answer(snippet);
         app.fail("connection refused".into());
         let screen = screen(&app, 90, 20);
@@ -1152,7 +1165,7 @@ mod tests {
     #[test]
     fn a_tiny_terminal_gets_a_message_instead_of_a_broken_layout() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let app = app_with_answer(snippet);
         let screen = screen(&app, 30, 8);
         assert!(screen.contains("at least 46×14"), "{screen}");

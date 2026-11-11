@@ -14,7 +14,7 @@ use readcode::snippet::Asks;
 #[ignore = "spawns a real ACP agent and spends tokens"]
 fn grades_through_the_real_agent() {
     let corpus = Corpus::builtin().unwrap();
-    let snippet = corpus.find("004").unwrap();
+    let snippet = corpus.find("rust-004").unwrap();
     let mode = Asks::Lines;
     let prompts = snippet.prompts(mode);
     let annotations: Vec<Annotation> = prompts

@@ -1,0 +1,46 @@
+id = "go-003"
+language = "go"
+title = "Collecting the even numbers"
+level = 2
+intro = "A range loop that grows a slice with append."
+code = '''
+func evens(values []int) []int {
+	out := []int{}
+	for _, v := range values {
+		if v%2 == 0 {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What does `[]int` mean in each of the two places it appears?"
+concepts = ["go.slice.type"]
+notes = { "go.slice.type" = "A slice of ints: a pointer, a length and a capacity. The caller keeps ownership of the backing array." }
+
+[[blocks]]
+lines = [2, 2]
+ask = "What is `out` before the loop runs, and is it nil?"
+concepts = ["go.slice.empty"]
+notes = { "go.slice.empty" = "`[]int{}` is an empty but non-nil slice, so appending to it is fine and `len(out)` is 0." }
+
+[[blocks]]
+lines = [3, 3]
+ask = "What are the two values `range` gives, and why is one of them `_`?"
+concepts = ["go.range", "go.blank"]
+notes = { "go.range" = "Over a slice, `range` yields the index and a copy of the element.", "go.blank" = "`_` discards the index; Go refuses unused variables, so a name you do not need must be the blank identifier." }
+
+[[blocks]]
+lines = [4, 6]
+ask = "What does `append` return, and why must the result be assigned back?"
+concepts = ["go.append"]
+notes = { "go.append" = "`append` returns a slice — usually the same backing array, but a new one when it must grow — so the result has to be reassigned." }
+
+[[blocks]]
+lines = [7, 9]
+ask = "What does the caller get, and can it change your slice?"
+concepts = ["go.slice.type"]
+notes = { "go.slice.type" = "The returned slice shares the backing array with `out`; the caller gets a copy of the header, not a deep copy of the ints." }

@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn the_task_carries_code_prompts_and_annotations() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("001").unwrap();
+        let snippet = corpus.find("rust-001").unwrap();
         let prompts = snippet.prompts(Asks::Blocks);
         let notes: Vec<Annotation> = prompts
             .iter()
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn line_mode_prompts_are_labelled_by_line() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let prompts = snippet.prompts(Asks::Lines);
         let notes: Vec<Annotation> = prompts
             .iter()
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn blank_annotations_are_labelled_not_dropped() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("004").unwrap();
+        let snippet = corpus.find("rust-004").unwrap();
         let prompts = snippet.prompts(Asks::Blocks);
         let notes: Vec<Annotation> = (0..prompts.len())
             .map(|index| Annotation::new(index, "   "))

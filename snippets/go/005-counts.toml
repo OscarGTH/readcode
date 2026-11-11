@@ -1,0 +1,38 @@
+id = "go-005"
+language = "go"
+title = "Counting words in a map"
+level = 2
+intro = "A map built with make, incremented through its index."
+code = '''
+func wordCount(words []string) map[string]int {
+	counts := make(map[string]int)
+	for _, word := range words {
+		counts[word]++
+	}
+	return counts
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What does the return type say about the keys and the values?"
+concepts = ["go.map.type"]
+notes = { "go.map.type" = "`map[string]int` maps string keys to int values, and the whole map is returned." }
+
+[[blocks]]
+lines = [2, 2]
+ask = "Why `make` here rather than declaring an empty map by hand?"
+concepts = ["go.map.make"]
+notes = { "go.map.make" = "A nil map can be read but not written; `make` allocates one ready for assignment." }
+
+[[blocks]]
+lines = [3, 4]
+ask = "What does `counts[word]++` do when the key has never been seen?"
+concepts = ["go.map.index", "go.zero.value"]
+notes = { "go.map.index" = "Indexing a missing key returns the value type's zero value, so the increment writes 1.", "go.zero.value" = "The zero value of `int` is 0, which is exactly what the first increment needs." }
+
+[[blocks]]
+lines = [5, 7]
+ask = "What does the caller receive, and what can it do with it?"
+concepts = ["go.map.reference"]
+notes = { "go.map.reference" = "Maps are reference types: the returned map shares the same underlying data as `counts`, so a change on one side is visible on the other." }

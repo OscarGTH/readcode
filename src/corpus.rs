@@ -70,6 +70,30 @@ const EMBEDDED: &[(&str, &str)] = &[
         "rust/015-enum-impl.toml",
         include_str!("../snippets/rust/015-enum-impl.toml"),
     ),
+    (
+        "go/001-hello.toml",
+        include_str!("../snippets/go/001-hello.toml"),
+    ),
+    (
+        "go/002-label.toml",
+        include_str!("../snippets/go/002-label.toml"),
+    ),
+    (
+        "go/003-evens.toml",
+        include_str!("../snippets/go/003-evens.toml"),
+    ),
+    (
+        "go/004-point.toml",
+        include_str!("../snippets/go/004-point.toml"),
+    ),
+    (
+        "go/005-counts.toml",
+        include_str!("../snippets/go/005-counts.toml"),
+    ),
+    (
+        "go/006-port.toml",
+        include_str!("../snippets/go/006-port.toml"),
+    ),
 ];
 
 #[derive(Debug, Default)]
@@ -144,14 +168,20 @@ impl Corpus {
 
     /// The languages the corpus covers, for guessing what a file is.
     pub fn languages(&self) -> Vec<String> {
-        let mut found: Vec<String> = self
-            .snippets()
-            .iter()
-            .map(|snippet| snippet.language.clone())
-            .collect();
-        found.sort();
-        found.dedup();
-        found
+        // Most material first: the default offer should be the language the
+        // corpus is mostly made of, not whichever name sorts earliest.
+        let mut found: Vec<(usize, String)> = Vec::new();
+        for snippet in self.snippets() {
+            match found
+                .iter_mut()
+                .find(|(_, language)| language == &snippet.language)
+            {
+                Some((count, _)) => *count += 1,
+                None => found.push((1, snippet.language.clone())),
+            }
+        }
+        found.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        found.into_iter().map(|(_, language)| language).collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -228,8 +258,17 @@ mod tests {
         let corpus = Corpus::builtin().unwrap();
         assert!(corpus.snippets().len() >= 4);
         assert_eq!(corpus.problems(), Vec::<String>::new());
+        assert!(corpus.snippets().len() >= 20);
+        let languages = corpus.languages();
+        assert!(languages.contains(&"rust".to_string()), "{languages:?}");
+        assert!(languages.contains(&"go".to_string()), "{languages:?}");
         for snippet in corpus.snippets() {
-            assert_eq!(snippet.language, "rust");
+            assert!(
+                languages.contains(&snippet.language),
+                "{} has language {}",
+                snippet.id,
+                snippet.language
+            );
             assert!(!snippet.title.is_empty());
             // Every snippet must actually teach something.
             assert!(snippet.concepts().len() >= 2);
@@ -239,8 +278,8 @@ mod tests {
     #[test]
     fn find_accepts_a_suffix() {
         let corpus = Corpus::builtin().unwrap();
-        let snippet = corpus.find("002").unwrap();
-        assert!(snippet.id.starts_with("rust-002"), "{}", snippet.id);
+        let snippet = corpus.find("015").unwrap();
+        assert_eq!(snippet.id, "rust-015");
         assert!(corpus.find("ownership").is_ok());
         assert!(corpus.find("nope-nope").is_err());
     }

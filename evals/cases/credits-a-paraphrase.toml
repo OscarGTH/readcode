@@ -9,7 +9,7 @@ prompt = 1
 text = "shout takes the string for itself, may grow it, and hands the whole thing back to whoever called it"
 [[annotations]]
 prompt = 2
-text = "the text lives on the heap and this binding cannot be changed afterwards"
+text = "it owns a growable buffer on the heap, and the value behind this binding cannot be changed afterwards"
 [[annotations]]
 prompt = 3
 text = "clone gives a separate string, so the first call is fine and the second one gives name away for good"

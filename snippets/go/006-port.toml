@@ -1,0 +1,38 @@
+id = "go-006"
+language = "go"
+title = "A port, or an error"
+level = 3
+intro = "Two return values, one of them an error, and a message that wraps the cause."
+code = '''
+func parsePort(text string) (int, error) {
+	port, err := strconv.Atoi(text)
+	if err != nil {
+		return 0, fmt.Errorf("not a port: %w", err)
+	}
+	return port, nil
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "Why does this function return two values instead of throwing?"
+concepts = ["go.multi.return", "go.error.interface"]
+notes = { "go.multi.return" = "Go returns errors as ordinary values, so the caller decides what to do with them.", "go.error.interface" = "`error` is an interface with one method, `Error() string`; any type implementing it is an error." }
+
+[[blocks]]
+lines = [2, 2]
+ask = "What are the two results of `strconv.Atoi`, and what is `err` when the text is fine?"
+concepts = ["go.multi.return", "go.err.check"]
+notes = { "go.multi.return" = "`Atoi` returns the parsed int and an error, only one of which is meaningful at a time.", "go.err.check" = "On success `err` is `nil`, and comparing an interface to `nil` is how Go reports no error." }
+
+[[blocks]]
+lines = [3, 5]
+ask = "What does `%w` do that `%v` would not?"
+concepts = ["go.error.wrap", "go.fmt.errorf"]
+notes = { "go.error.wrap" = "`%w` wraps the original error, so `errors.Is` and `errors.Unwrap` can still reach it.", "go.fmt.errorf" = "`fmt.Errorf` builds a new error value from a format string." }
+
+[[blocks]]
+lines = [6, 7]
+ask = "Why `nil` here, and what does the caller see?"
+concepts = ["go.nil.error"]
+notes = { "go.nil.error" = "A nil error means success; the caller checks `err != nil` rather than trusting the int alone." }

@@ -31,6 +31,16 @@ const HEIGHT: u16 = 24;
 /// Answers a real sitting produced, so the frame shows an honest mid-sitting state
 /// rather than invented prose.
 fn answers_for(snippet: &str, asks: Asks) -> (&'static [&'static str], &'static str) {
+    if snippet.starts_with("go-002") {
+        return (
+            &[
+                "takes an int and gives back a string",
+                "if n divides evenly by two it returns even right there, so the lines below never run",
+                "the odd case falls through to here, because the if only covered the even one",
+            ],
+            "both paths must return a string, and this is the one the odd numbers reach",
+        );
+    }
     if snippet.starts_with("rust-010") {
         return (
             &[
@@ -67,7 +77,7 @@ fn answers_for(snippet: &str, asks: Asks) -> (&'static [&'static str], &'static 
                 "counts has to be mutable because the loop inserts into it",
                 "for drives the iterator and split_whitespace yields each word",
             ],
-            "entry looks the key up, or_insert puts 0 in when it",
+            "entry looks the key up, and or_insert puts 0 in when it is missing",
         )
     }
 }

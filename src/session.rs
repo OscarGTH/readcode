@@ -2,7 +2,7 @@
 //! single line), grade it, and fold the verdicts back into mastery. I/O is
 //! injected so the whole loop runs in tests without a terminal.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 
 use anyhow::{Context, Result, bail};
@@ -43,28 +43,44 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
         return None;
     }
 
+    // One language at a time: a sitting in Go must not be decided by what you
+    // have read in Rust.
+    let language = progress.active_language();
+    let in_language: Vec<&Snippet> = corpus
+        .snippets()
+        .iter()
+        .filter(|snippet| language.is_none_or(|language| snippet.language == language))
+        .collect();
+    if in_language.is_empty() {
+        return None;
+    }
+    let level = match language {
+        Some(language) => progress.level_of(language),
+        None => progress.level,
+    };
+
     // A declared level limits the menu to what the learner can actually read,
     // plus one rung of stretch. No declared level means no filter.
-    let mut pool: Vec<&Snippet> = match progress.level {
+    let mut pool: Vec<&Snippet> = match level {
         Some(level) => {
-            let reachable: Vec<&Snippet> = corpus
-                .snippets()
+            let reachable: Vec<&Snippet> = in_language
                 .iter()
+                .copied()
                 .filter(|snippet| snippet.levels().reachable(level))
                 .collect();
             if reachable.is_empty() {
-                corpus.snippets().iter().collect()
+                in_language.clone()
             } else {
                 reachable
             }
         }
-        None => corpus.snippets().iter().collect(),
+        None => in_language.clone(),
     };
 
     // Start at the bottom of your own level: while there is still something to
     // learn at or below it, the rung above waits. That is the difference between
     // "you may read this" and "this is what you are reading next".
-    if let Some(level) = progress.level {
+    if let Some(level) = level {
         let at_or_below: Vec<&Snippet> = pool
             .iter()
             .copied()
@@ -111,7 +127,7 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
             };
             // Content at the learner's level beats content far from it, so a
             // beginner meets `let` before they meet an iterator chain.
-            let fit = match progress.level {
+            let fit = match level {
                 Some(level) => 1.0 / (1.0 + snippet.levels().distance(level)),
                 None => 1.0,
             };
@@ -147,14 +163,162 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
 
 /// A nudge upwards once everything at the learner's level is solid. The level is
 /// theirs to set; this only says when the current rung has stopped teaching.
+pub fn progress_view<'a>(corpus: &Corpus, progress: &Progress, now: u64) -> ui::ProgressView<'a> {
+    let active = progress.language.clone();
+    let in_language = |snippet: &crate::snippet::Snippet| match active.as_deref() {
+        Some(language) => snippet.language == language,
+        None => true,
+    };
+    let language_name = match &active {
+        Some(language) => language.clone(),
+        None => corpus.languages().first().cloned().unwrap_or_default(),
+    };
+    let level = match &active {
+        Some(language) => progress.level_of(language),
+        None => progress.level,
+    };
+
+    // Everything below counts only this language: reading Go must not move the
+    // numbers for Rust.
+    let snippets: Vec<&crate::snippet::Snippet> = corpus
+        .snippets()
+        .iter()
+        .filter(|snippet| in_language(snippet))
+        .collect();
+
+    let mut at_level: BTreeSet<String> = BTreeSet::new();
+    let mut new_at_level = 0usize;
+    for snippet in &snippets {
+        if level.is_none_or(|level| snippet.levels().from <= level) {
+            at_level.extend(snippet.concepts());
+            if !progress.seen(&snippet.id) {
+                new_at_level += 1;
+            }
+        }
+    }
+
+    let mut ladder: Vec<ui::LevelProgress> = Vec::new();
+    for rung in 1..=crate::snippet::MAX_LEVEL {
+        let concepts: BTreeSet<String> = snippets
+            .iter()
+            .filter(|snippet| snippet.levels().from == rung)
+            .flat_map(|snippet| snippet.concepts())
+            .collect();
+        if concepts.is_empty() {
+            continue;
+        }
+        let strength: f64 = concepts
+            .iter()
+            .map(|concept| {
+                progress
+                    .concepts
+                    .get(concept)
+                    .map(|state| state.strength)
+                    .unwrap_or(0.0)
+            })
+            .sum();
+        let solid = concepts
+            .iter()
+            .filter(|concept| {
+                progress
+                    .concepts
+                    .get(*concept)
+                    .is_some_and(|state| state.is_mastered())
+            })
+            .count();
+        ladder.push(ui::LevelProgress {
+            level: rung,
+            strength: strength / concepts.len() as f64,
+            solid,
+            total: concepts.len(),
+        });
+    }
+
+    let this_language: BTreeSet<String> = snippets
+        .iter()
+        .flat_map(|snippet| snippet.concepts())
+        .collect();
+    let mut needs_work: Vec<ConceptState> = progress
+        .concepts
+        .iter()
+        .filter(|(concept, state)| this_language.contains(*concept) && !state.is_mastered())
+        .map(|(_, state)| state.clone())
+        .collect();
+    needs_work.sort_by(|a, b| b.urgency(now).total_cmp(&a.urgency(now)));
+
+    let others: Vec<(String, usize, usize)> = corpus
+        .languages()
+        .into_iter()
+        .filter(|language| Some(language) != active.as_ref())
+        .map(|language| {
+            let all: Vec<&crate::snippet::Snippet> = corpus
+                .snippets()
+                .iter()
+                .filter(|snippet| snippet.language == language)
+                .collect();
+            let seen = all
+                .iter()
+                .filter(|snippet| progress.seen(&snippet.id))
+                .count();
+            (language, seen, all.len())
+        })
+        .collect();
+
+    ui::ProgressView {
+        language: language_name,
+        others,
+        level,
+        level_name: level
+            .map(|level| crate::snippet::LEVELS[level as usize - 1])
+            .unwrap_or(""),
+        ladder,
+        snippets_seen: snippets
+            .iter()
+            .filter(|snippet| progress.seen(&snippet.id))
+            .count(),
+        snippets_total: snippets.len(),
+        new_at_level,
+        started: this_language
+            .iter()
+            .filter(|concept| {
+                progress
+                    .concepts
+                    .get(*concept)
+                    .is_some_and(|state| state.reps > 0)
+            })
+            .count(),
+        solid: this_language
+            .iter()
+            .filter(|concept| {
+                progress
+                    .concepts
+                    .get(*concept)
+                    .is_some_and(|state| state.is_mastered())
+            })
+            .count(),
+        untouched: at_level
+            .iter()
+            .filter(|concept| !progress.concepts.contains_key(*concept))
+            .count(),
+        needs_work,
+    }
+}
+
 pub fn level_advice(corpus: &Corpus, progress: &Progress) -> Option<String> {
-    let level = progress.level?;
+    let language = progress.active_language();
+    let level = match language {
+        Some(language) => progress.level_of(language)?,
+        None => progress.level?,
+    };
     if level >= MAX_LEVEL {
         return None;
     }
     let mut seen = 0usize;
     let mut mastered = 0usize;
     for snippet in corpus.snippets() {
+        if language.is_some_and(|language| snippet.language != language) {
+            continue;
+        }
         if snippet.levels().to > level {
             continue;
         }
@@ -177,14 +341,93 @@ pub fn level_advice(corpus: &Corpus, progress: &Progress) -> Option<String> {
     None
 }
 
-/// The one-time question, asked on the normal screen before the sitting so it
-/// works the same in the full-screen view and the plain one.
-pub fn ask_level(term: &mut Terminal<'_>) -> Result<u8> {
+/// `go` → `Go`, `rust` → `Rust`: a language name in a sentence, not an id.
+fn display_name(language: &str) -> String {
+    match language {
+        "rust" => "Rust".to_string(),
+        "go" => "Go".to_string(),
+        other => {
+            let mut chars = other.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        }
+    }
+}
+
+/// The one-time question about which language to work in, asked when the corpus
+/// carries more than one.
+pub fn ask_language(term: &mut Terminal<'_>, languages: &[String]) -> Result<String> {
     writeln!(term.out)?;
     writeln!(
         term.out,
         "{}",
-        term.style.bold("How much Rust can you read right now?")
+        term.style.bold("Which language are you reading?")
+    )?;
+    for (index, language) in languages.iter().enumerate() {
+        writeln!(
+            term.out,
+            "  {} {}",
+            term.style.cyan(&format!("{} ·", index + 1)),
+            language
+        )?;
+    }
+    writeln!(
+        term.out,
+        "{}",
+        term.style
+            .dim("each language keeps its own level and progress; `readcode lang <name>` switches")
+    )?;
+
+    for attempt in 0..3 {
+        write!(
+            term.out,
+            "{} ",
+            term.style
+                .cyan(&format!("language 1-{} [1]:", languages.len()))
+        )?;
+        term.out.flush()?;
+
+        let mut line = String::new();
+        let read = term.input.read_line(&mut line)?;
+        let answer = line.trim().to_lowercase();
+        if read == 0 || answer.is_empty() {
+            return Ok(languages[0].clone());
+        }
+        if let Ok(number) = answer.parse::<usize>() {
+            if let Some(language) = languages.get(number.wrapping_sub(1)) {
+                return Ok(language.clone());
+            }
+        }
+        if let Some(language) = languages
+            .iter()
+            .find(|language| language.to_lowercase() == answer)
+        {
+            return Ok(language.clone());
+        }
+        if attempt < 2 {
+            writeln!(
+                term.out,
+                "{}",
+                term.style.yellow("pick one of the names or numbers above")
+            )?;
+        }
+    }
+    Ok(languages[0].clone())
+}
+
+/// The one-time question, asked on the normal screen before the sitting so it
+/// works the same in the full-screen view and the plain one.
+pub fn ask_level(term: &mut Terminal<'_>, language: &str) -> Result<u8> {
+    writeln!(term.out)?;
+    writeln!(
+        term.out,
+        "{}",
+        term.style.bold(&format!(
+            "How much {} can you read right now?",
+            display_name(language)
+        ))
     )?;
     for (index, description) in LEVELS.iter().enumerate() {
         writeln!(
@@ -658,7 +901,7 @@ mod tests {
         for (stdin, want) in [("3\n", 3), ("5\n", 5), ("\n", 1), ("", 1)] {
             let mut input = std::io::Cursor::new(stdin.to_string());
             let mut out: Vec<u8> = Vec::new();
-            let level = ask_level(&mut terminal(&mut input, &mut out)).unwrap();
+            let level = ask_level(&mut terminal(&mut input, &mut out), "rust").unwrap();
             assert_eq!(level, want, "stdin {stdin:?}");
             let screen = String::from_utf8_lossy(&out).to_string();
             assert!(screen.contains("How much Rust can you read"), "{screen}");
@@ -672,7 +915,7 @@ mod tests {
     fn a_wrong_answer_is_asked_again_and_then_accepted() {
         let mut input = std::io::Cursor::new("9\nyes\n2\n".to_string());
         let mut out: Vec<u8> = Vec::new();
-        let level = ask_level(&mut terminal(&mut input, &mut out)).unwrap();
+        let level = ask_level(&mut terminal(&mut input, &mut out), "rust").unwrap();
         assert_eq!(level, 2);
         let screen = String::from_utf8_lossy(&out).to_string();
         assert_eq!(screen.matches("pick a number").count(), 2, "{screen}");
@@ -682,7 +925,10 @@ mod tests {
     fn nonsense_answers_fall_back_to_the_first_rung() {
         let mut input = std::io::Cursor::new("nope\nnope\nnope\n".to_string());
         let mut out: Vec<u8> = Vec::new();
-        assert_eq!(ask_level(&mut terminal(&mut input, &mut out)).unwrap(), 1);
+        assert_eq!(
+            ask_level(&mut terminal(&mut input, &mut out), "rust").unwrap(),
+            1
+        );
     }
 
     /// Runs a sitting over piped input; returns the outcome and the screen.
@@ -892,7 +1138,7 @@ mod tests {
     #[test]
     fn one_unparseable_reply_does_not_lose_the_sitting() {
         let corpus = corpus();
-        let snippet = corpus.find("002").unwrap();
+        let snippet = corpus.find("rust-002").unwrap();
         let mut progress = Progress::default();
         let stdin = answers(snippet, Asks::Blocks, "an explanation");
         let mut input = std::io::Cursor::new(stdin);
@@ -924,7 +1170,7 @@ mod tests {
     #[test]
     fn a_full_sitting_saves_progress_and_schedules_concepts() {
         let corpus = corpus();
-        let snippet = corpus.find("002").unwrap();
+        let snippet = corpus.find("rust-002").unwrap();
         let prompts = snippet.prompts(Asks::Blocks);
         let mut progress = Progress::default();
         let stdin = answers(snippet, Asks::Blocks, "an explanation");
@@ -957,7 +1203,7 @@ mod tests {
     #[test]
     fn line_mode_asks_more_questions_and_shows_the_whole_snippet() {
         let corpus = corpus();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let block_prompts = snippet.prompts(Asks::Blocks);
         let line_prompts = snippet.prompts(Asks::Lines);
         assert!(
@@ -985,7 +1231,7 @@ mod tests {
     #[test]
     fn unknown_answers_come_back_within_the_sitting() {
         let corpus = corpus();
-        let snippet = corpus.find("002").unwrap();
+        let snippet = corpus.find("rust-002").unwrap();
         let prompts = snippet.prompts(Asks::Blocks);
         let mut progress = Progress::default();
         let stdin = ":unknown\n".repeat(prompts.len());
@@ -1010,7 +1256,7 @@ mod tests {
     #[test]
     fn quitting_mid_sitting_saves_nothing() {
         let corpus = corpus();
-        let snippet = corpus.find("001").unwrap();
+        let snippet = corpus.find("rust-001").unwrap();
         let mut progress = Progress::default();
         let (result, _) = sitting(
             snippet,
@@ -1053,7 +1299,7 @@ mod tests {
     #[test]
     fn choose_mode_alternates_on_a_repeat_visit() {
         let corpus = corpus();
-        let snippet = corpus.find("001").unwrap();
+        let snippet = corpus.find("rust-001").unwrap();
         let mut progress = Progress::default();
         // First visit: the mode the corpus is authored for.
         assert_eq!(choose_mode(snippet, &progress), Asks::Blocks);
@@ -1067,7 +1313,7 @@ mod tests {
     #[test]
     fn choose_mode_prefers_lines_for_a_line_authored_snippet() {
         let corpus = corpus();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let progress = Progress::default();
         assert_eq!(choose_mode(snippet, &progress), Asks::Lines);
     }
@@ -1097,7 +1343,7 @@ mod tests {
                 state.due_at = 9_000_000;
             }
         }
-        let target = corpus.find("003").unwrap();
+        let target = corpus.find("rust-003").unwrap();
         for concept in target.concepts() {
             let state = progress.concept_mut(&concept);
             state.strength = 0.0;
@@ -1128,7 +1374,7 @@ mod tests {
     #[test]
     fn a_line_sitting_schedules_every_concept_like_a_block_sitting() {
         let corpus = corpus();
-        let snippet = corpus.find("005").unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
         let prompts = snippet.prompts(Asks::Lines);
         let mut progress = Progress::default();
         let stdin = ":unknown\n".repeat(prompts.len());
@@ -1145,5 +1391,119 @@ mod tests {
             "every concept in the snippet should be scheduled inside the sitting"
         );
         assert_eq!(progress.last_mode(&snippet.id), Some(Asks::Lines));
+    }
+
+    // ---- languages -------------------------------------------------------
+
+    fn a_progress_in(language: Option<&str>) -> Progress {
+        Progress {
+            language: language.map(str::to_string),
+            ..Progress::default()
+        }
+    }
+
+    #[test]
+    fn a_sitting_stays_in_the_language_you_chose() {
+        let corpus = Corpus::builtin().unwrap();
+        let progress = a_progress_in(Some("go"));
+        let now = 1_700_000_000;
+
+        for _ in 0..40 {
+            let picked = pick(&corpus, &progress, now).unwrap();
+            assert_eq!(picked.language, "go", "{}", picked.id);
+        }
+    }
+
+    #[test]
+    fn the_level_is_kept_per_language() {
+        let mut progress = Progress::default();
+        progress.set_level("rust", 4);
+        progress.set_level("go", 1);
+        assert_eq!(progress.level_of("rust"), Some(4));
+        assert_eq!(progress.level_of("go"), Some(1));
+        // A language that was never set has no level, so it gets asked about.
+        assert_eq!(progress.level_of("python"), None);
+    }
+
+    #[test]
+    fn a_level_from_a_single_language_file_still_applies_to_rust() {
+        // Progress written before languages existed: one `level`, no `levels`.
+        let progress = Progress {
+            level: Some(3),
+            ..Progress::default()
+        };
+        assert_eq!(progress.level_of("rust"), Some(3));
+        // It must not leak into a language the file never mentioned.
+        assert_eq!(progress.level_of("go"), None);
+    }
+
+    #[test]
+    fn a_level_narrows_the_go_menu_too() {
+        let corpus = Corpus::builtin().unwrap();
+        let mut progress = a_progress_in(Some("go"));
+        progress.set_level("go", 1);
+
+        for _ in 0..40 {
+            let picked = pick(&corpus, &progress, 1_700_000_000).unwrap();
+            assert_eq!(picked.language, "go");
+            assert!(
+                picked.levels().reachable(1),
+                "{} is above level 1",
+                picked.id
+            );
+        }
+    }
+
+    #[test]
+    fn progress_in_one_language_does_not_count_in_another() {
+        let corpus = Corpus::builtin().unwrap();
+        let mut progress = a_progress_in(Some("go"));
+        progress.set_level("go", 1);
+
+        // Read two Go snippets and meet one Go concept.
+        let go: Vec<String> = corpus
+            .snippets()
+            .iter()
+            .filter(|snippet| snippet.language == "go")
+            .take(2)
+            .map(|snippet| snippet.id.clone())
+            .collect();
+        for id in &go {
+            progress.seen_snippets.push(id.clone());
+        }
+
+        let view = progress_view(&corpus, &progress, 1_700_000_000);
+        assert_eq!(view.language, "go");
+        assert_eq!(view.snippets_seen, 2);
+        let go_total = corpus
+            .snippets()
+            .iter()
+            .filter(|snippet| snippet.language == "go")
+            .count();
+        assert_eq!(view.snippets_total, go_total);
+        assert!(
+            view.others
+                .iter()
+                .any(|(language, _, _)| language == "rust"),
+            "the other language should still be offered: {:?}",
+            view.others
+        );
+    }
+
+    #[test]
+    fn the_ladder_only_shows_rungs_this_language_reaches() {
+        let corpus = Corpus::builtin().unwrap();
+        let mut progress = a_progress_in(Some("go"));
+        progress.set_level("go", 1);
+
+        let view = progress_view(&corpus, &progress, 1_700_000_000);
+        let go_top = corpus
+            .snippets()
+            .iter()
+            .filter(|snippet| snippet.language == "go")
+            .map(|snippet| snippet.levels().to)
+            .max()
+            .unwrap();
+        assert_eq!(view.ladder.last().map(|rung| rung.level), Some(go_top));
     }
 }

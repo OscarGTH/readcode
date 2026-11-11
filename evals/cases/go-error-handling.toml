@@ -1,0 +1,22 @@
+id = "go-error-handling"
+description = "Go hands errors back as values: two returns, a nil check, and `%w` so the cause stays reachable."
+snippet = "go-006"
+mode = "blocks"
+must_pass = true
+tags = ["go", "language"]
+
+[[annotations]]
+prompt = 1
+text = "it gives back an int and an error, because go has no exceptions — error is just an interface with an Error() method, so the caller checks the value instead of catching something"
+
+[[expect]]
+prompt = 1
+verdict = "correct"
+[[expect]]
+prompt = 1
+concept = "go.multi.return"
+verdict = "correct"
+[[expect]]
+prompt = 1
+concept = "go.error.interface"
+verdict = "correct"
