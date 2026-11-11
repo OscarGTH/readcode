@@ -261,7 +261,6 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
             );
         }
         rows.push(Line::from(spans));
-
     }
 
     let height = area.height as usize;
