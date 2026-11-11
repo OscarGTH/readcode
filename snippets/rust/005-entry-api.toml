@@ -19,14 +19,14 @@ fn count_words(text: &str) -> HashMap<&str, usize> {
 
 [[blocks]]
 lines = [1, 2]
-ask = "What does this import bring into scope?"
-concepts = ["rust.use.import"]
-notes = { "rust.use.import" = "`use` brings `HashMap` into scope, so the rest of the file writes `HashMap` instead of `std::collections::HashMap`." }
+ask = "Why does this file need a `use` for `HashMap`, when `String` and `Vec` need none?"
+concepts = ["rust.use.prelude"]
+notes = { "rust.use.prelude" = "The prelude is the small set of names every Rust file gets for free — `String`, `Vec`, `Option`, `Result`. `HashMap` is not in it, so it has to be named explicitly." }
   [[blocks.line]]
   at = 1
-  ask = "What does this import bring into scope?"
-  concepts = ["rust.use.import"]
-  notes = { "rust.use.import" = "`use` puts `HashMap` in scope so the body can write `HashMap` instead of the full path." }
+  ask = "Why does this file need a `use` for `HashMap`, when `String` and `Vec` need none?"
+  concepts = ["rust.use.prelude"]
+  notes = { "rust.use.prelude" = "`String` and `Vec` come from the prelude; `HashMap` does not, so the file has to import it by hand." }
 
 [[blocks]]
 lines = [3, 3]

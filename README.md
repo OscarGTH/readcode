@@ -426,7 +426,8 @@ Block:
 - `lines = [start, end]` — 1-based, inclusive, in order, no gaps.
 - `concepts` — what the learner must name. This is the unit of progress, not the snippet:
   mastery and scheduling are per concept, so reuse the same id wherever the idea appears.
-  Namespace them (`rust.ownership.move`).
+  Namespace them (`rust.ownership.move`), and make each one a rule of this language rather
+  than of programming in general — see the tips below.
 - `ask` — optional question for the block.
 - `notes` — optional map of concept → ground truth for that concept.
 - `line` — optional `[[blocks.line]]` entries, as above.
@@ -444,6 +445,13 @@ When a range is wrong, `readcode check` prints the snippet with line numbers, so
 count lines by hand to find the off-by-one.
 
 ### Tips for snippets worth studying
+
+- **Ask about the language, not about programming.** "What does `%` do" and "what is a
+  `while` loop" teach nothing about Rust or Go; "why may this borrow end before the next
+  line", "what does `&mut self` force on the caller", "where does this key's zero value come
+  from" do. A concept is what the scheduler tracks, so a concept any language shares is a
+  slot in your review spent on something you already knew. The corpus follows this rule:
+  `rust.borrow.short`, `go.value.semantics`, `go.export.capital` — not `rust.operator.modulo`.
 
 - **Use code you actually had to read.** A file from a repo you maintain beats a textbook
   example, because that is the skill you are training.

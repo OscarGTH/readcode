@@ -2,7 +2,7 @@ id = "rust-009"
 language = "rust"
 title = "Adding up a range"
 level = 2
-intro = "A loop that accumulates a running total, and returns it."
+intro = "A loop over a range, adding into an unsigned integer."
 code = '''
 fn total(limit: u32) -> u32 {
     let mut sum = 0;
@@ -15,18 +15,18 @@ fn total(limit: u32) -> u32 {
 
 [[blocks]]
 lines = [1, 1]
-ask = "What does the function promise, and what is `u32`?"
-concepts = ["rust.fn.return", "rust.type.u32"]
-notes = { "rust.fn.return" = "It takes a `u32` and returns a `u32`.", "rust.type.u32" = "`u32` is an unsigned 32-bit integer: whole numbers only, never negative." }
+ask = "What does `u32` rule out, and what happens when a sum of many `u32`s passes the maximum?"
+concepts = ["rust.type.u32", "rust.overflow"]
+notes = { "rust.type.u32" = "`u32` is 32 bits and unsigned: 0 up to about 4.29 billion, and never negative.", "rust.overflow" = "Going past `u32::MAX` panics in a debug build and wraps in a release build; `checked_add` or `u64` is how you choose deliberately." }
 
 [[blocks]]
 lines = [2, 5]
-ask = "What is the loop doing to `sum`, step by step?"
-concepts = ["rust.binding.mut", "rust.range.inclusive", "rust.iterator.for", "rust.operator.compound"]
-notes = { "rust.binding.mut" = "`mut` is required because `sum` is reassigned inside the loop.", "rust.range.inclusive" = "`1..=limit` includes `limit`; `1..limit` would stop one short.", "rust.iterator.for" = "`for` takes an iterator — here a range — and runs the body once per item.", "rust.operator.compound" = "`sum += n` is shorthand for `sum = sum + n`." }
+ask = "Why must `sum` be `mut`, and what does `1..=limit` produce for the loop to consume?"
+concepts = ["rust.binding.mut", "rust.range.inclusive", "rust.iterator.for"]
+notes = { "rust.binding.mut" = "`sum` is reassigned on every pass, and a `let` binding without `mut` may not be.", "rust.range.inclusive" = "`1..=limit` includes `limit`; `1..limit` would stop one short and give a different total.", "rust.iterator.for" = "`for` takes anything implementing `IntoIterator` — here a `RangeInclusive<u32>` — and runs the body once per item." }
 
 [[blocks]]
 lines = [6, 7]
-ask = "Why is there no `return` on the last line?"
+ask = "Why is there no `return` on the last line, and what would a semicolon do?"
 concepts = ["rust.return.value"]
-notes = { "rust.return.value" = "`sum` is the tail expression, so its value is the return value; a semicolon would make it `()`." }
+notes = { "rust.return.value" = "`sum` is the tail expression, so it is the function's value. Adding a semicolon turns the body's value into `()`, which would not compile against `-> u32`." }

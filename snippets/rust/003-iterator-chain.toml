@@ -24,8 +24,8 @@ fn errors(lines: &[LogLine]) -> Vec<String> {
 [[blocks]]
 lines = [1, 6]
 ask = "Why is `level` a `&'static str` while `message` is a `String`?"
-concepts = ["rust.struct", "rust.derive", "rust.lifetime.static"]
-notes = { "rust.struct" = "A struct groups named fields into one type; each field has its own type.", "rust.derive" = "`#[derive(Debug)]` generates `impl Debug for LogLine`, which is what `{:?}` needs.", "rust.lifetime.static" = "`&'static str` borrows text that lives for the whole program — string literals are exactly that; `String` is owned instead, because the message is built at runtime." }
+concepts = ["rust.derive", "rust.lifetime.static", "rust.heap.string"]
+notes = { "rust.derive" = "`#[derive(Debug)]` generates `impl Debug for LogLine`, which is what `{:?}` needs.", "rust.heap.string" = "`String` owns a heap buffer that can grow, which is what a message built at run time needs — and why this struct cannot be `Copy`.", "rust.lifetime.static" = "`&'static str` borrows text that lives for the whole program — string literals are exactly that; `String` is owned instead, because the message is built at runtime." }
 
 [[blocks]]
 lines = [7, 10]

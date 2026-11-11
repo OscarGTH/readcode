@@ -53,11 +53,11 @@ fn answers_for(snippet: &str, asks: Asks) -> (&'static [&'static str], &'static 
     if snippet.starts_with("rust-006") && asks == Asks::Blocks {
         return (
             &[
-                "defines a main function, which is where the program starts",
-                "binds apples to 3 and pears to 2",
-                "adds the two bindings into a new one called total",
+                "both are i32, because an integer literal with nothing to force it is i32, and neither name may be reassigned without mut",
+                "total is i32 because its operands are; rust will not quietly add an f64 to it, that needs an as",
+                "the ! marks a macro, and {total} is captured from the surrounding scope by name",
             ],
-            "prints the total, capturing it by name from the surrounding scope",
+            "so the format string is checked against the arguments at compile time",
         );
     }
     if snippet.starts_with("rust-006") {

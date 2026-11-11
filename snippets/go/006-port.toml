@@ -28,8 +28,8 @@ notes = { "go.multi.return" = "`Atoi` returns the parsed int and an error, only 
 [[blocks]]
 lines = [3, 5]
 ask = "What does `%w` do that `%v` would not?"
-concepts = ["go.error.wrap", "go.fmt.errorf"]
-notes = { "go.error.wrap" = "`%w` wraps the original error, so `errors.Is` and `errors.Unwrap` can still reach it.", "go.fmt.errorf" = "`fmt.Errorf` builds a new error value from a format string." }
+concepts = ["go.error.wrap"]
+notes = { "go.error.wrap" = "`fmt.Errorf` with `%w` builds a new error that keeps the original inside it, so `errors.Is` and `errors.Unwrap` still reach the cause. `%v` would flatten it to text and lose the chain." }
 
 [[blocks]]
 lines = [6, 7]

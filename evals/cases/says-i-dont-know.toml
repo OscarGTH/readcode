@@ -14,5 +14,5 @@ prompt = 1
 verdict = "unknown"
 [[expect]]
 prompt = 1
-concept = "rust.use.import"
+concept = "rust.use.prelude"
 verdict = "unknown"

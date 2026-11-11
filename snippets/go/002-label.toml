@@ -2,7 +2,7 @@ id = "go-002"
 language = "go"
 title = "One decision, two returns"
 level = 1
-intro = "A function that returns different text depending on the number it is given."
+intro = "A function that returns one of two literals, and the compiler's check that it always returns."
 code = '''
 func label(n int) string {
 	if n%2 == 0 {
@@ -14,24 +14,24 @@ func label(n int) string {
 
 [[blocks]]
 lines = [1, 1]
-ask = "Read the signature: what goes in, and what comes back?"
-concepts = ["go.func.signature"]
-notes = { "go.func.signature" = "It takes an `int` and returns a `string`; the return type comes after the parameter list." }
+ask = "Where does Go put the return type, and how would this signature look if it returned two things?"
+concepts = ["go.func.return"]
+notes = { "go.func.return" = "Parameters first, then the result — the opposite order to C or Rust. Two results would be written `(int, error)`, and both names and types would still come before the brace." }
 
 [[blocks]]
 lines = [2, 4]
-ask = "When does the first return run, and what happens to the code below it?"
-concepts = ["go.if", "go.return.early"]
-notes = { "go.if" = "`if` takes no parentheses in Go, and the condition must be a bool.", "go.return.early" = "A `return` inside the `if` leaves the function immediately, so the last line never runs in that case." }
+ask = "When does the return on line 3 run, and what does it leave behind?"
+concepts = ["go.return.early"]
+notes = { "go.return.early" = "`return` leaves the function immediately; the `if` has no braces-with-else here, so the even case never reaches line 5." }
 
 [[blocks]]
 lines = [5, 5]
-ask = "Why is there a return after the if, when one branch already returned?"
+ask = "Why is there a return here at all, when one path already returned?"
 concepts = ["go.return.early"]
-notes = { "go.return.early" = "The `if` only covers the even case; the odd case falls through to this line, and Go requires every path to return." }
+notes = { "go.return.early" = "The `if` covers only the even case; the odd case falls through to this line, which is the only return it ever executes." }
 
 [[blocks]]
 lines = [6, 6]
-ask = "What does the compiler check about the paths through this function?"
-concepts = ["go.func.signature"]
-notes = { "go.func.signature" = "Every path must return a `string`, and the compiler rejects the function if one can reach the closing brace without a value." }
+ask = "Delete the last `return` — what does the compiler say, and why can it tell?"
+concepts = ["go.return.all.paths"]
+notes = { "go.return.all.paths" = "Go type-checks every path: a function with a result must end in a terminating statement, so a missing return is a compile error rather than a returned zero value." }
