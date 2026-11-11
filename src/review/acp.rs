@@ -618,6 +618,18 @@ pub struct AcpReviewer {
 }
 
 impl AcpReviewer {
+    /// Sets the agent from a full command line (`opencode acp`), splitting it the
+    /// way `READCODE_AGENT` is split. Assigning `program` alone would look for a
+    /// binary literally named "opencode acp".
+    pub fn set_command(&mut self, command: &str) {
+        let mut parts: Vec<String> = command.split_whitespace().map(str::to_string).collect();
+        if parts.is_empty() {
+            return;
+        }
+        self.program = parts.remove(0);
+        self.args = parts;
+    }
+
     /// `READCODE_AGENT` holds the full command (`opencode acp`), so any ACP
     /// agent works without a new flag.
     pub fn from_env(cwd: std::path::PathBuf) -> Self {

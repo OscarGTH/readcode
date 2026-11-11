@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 
+use readcode::config::Config;
 use readcode::corpus::Corpus;
 use readcode::review::{Reviewer, acp::AcpReviewer, api::ApiReviewer};
 use readcode::session;
@@ -138,6 +139,8 @@ enum Command {
         #[arg(long)]
         write: bool,
     },
+    /// Set up, or change, who grades you: reviewer, agent, model.
+    Setup,
     /// Show or switch the language you are reading in.
     Lang {
         /// The language to switch to, e.g. `go`. Omit to see them all.
@@ -191,6 +194,7 @@ fn main() -> Result<()> {
     };
     let progress_path = store::progress_path(&data_dir);
     let mut progress = Progress::load(&progress_path)?;
+    let mut config = Config::load(&data_dir);
     let now = srs::now();
 
     // `--language` is a flag for the whole program, not just for a sitting:
@@ -209,9 +213,32 @@ fn main() -> Result<()> {
     }
 
     match cli.command.clone().unwrap_or(Command::Next) {
+        Command::Setup => {
+            let mut input = io::stdin().lock();
+            let mut out = io::stdout();
+            let mut term = session::Terminal {
+                input: &mut input,
+                out: &mut out,
+                style,
+            };
+            let _ = readcode::setup::run(&mut term, &corpus, &data_dir)?;
+            Ok(())
+        }
         Command::Next => {
             let mut input = io::stdin().lock();
             let mut out = io::stdout();
+
+            // Nobody reads a README before the first sitting. If there is no
+            // reviewer configured and a person is at the keyboard, ask now rather
+            // than failing at grading time, after every answer has been typed.
+            if !config.grades() && cli.reviewer.is_none() && std::io::stdin().is_terminal() {
+                let mut term = session::Terminal {
+                    input: &mut input,
+                    out: &mut out,
+                    style,
+                };
+                config = readcode::setup::run(&mut term, &corpus, &data_dir)?;
+            }
 
             // Language first — it decides which snippets and which level apply —
             // then that language's level.
@@ -269,10 +296,10 @@ fn main() -> Result<()> {
                     .context("the corpus is empty — `--corpus <dir>` to load some")?,
             };
 
-            let backend = choose_backend(&cli).ok_or_else(no_reviewer)?;
+            let backend = choose_backend(&cli, &config).ok_or_else(no_reviewer)?;
             let agent_cwd = data_dir.join("agent");
             std::fs::create_dir_all(&agent_cwd).ok();
-            let reviewer = build_reviewer(&cli, backend, agent_cwd)?;
+            let reviewer = build_reviewer(&cli, backend, agent_cwd, &config)?;
 
             let mode = if cli.lines {
                 Asks::Lines
@@ -363,10 +390,10 @@ fn main() -> Result<()> {
                 );
             }
 
-            let backend = choose_backend(&cli).ok_or_else(no_reviewer)?;
+            let backend = choose_backend(&cli, &config).ok_or_else(no_reviewer)?;
             let agent_cwd = data_dir.join("agent");
             std::fs::create_dir_all(&agent_cwd).ok();
-            let reviewer = build_reviewer(&cli, backend, agent_cwd)?;
+            let reviewer = build_reviewer(&cli, backend, agent_cwd, &config)?;
 
             let known: Vec<String> = corpus
                 .snippets()
@@ -706,11 +733,13 @@ fn main() -> Result<()> {
             let mut summary = match target {
                 EvalTarget::Mock => readcode::eval::run_suite_mock(&corpus, &suite, trials, false)?,
                 EvalTarget::Api => {
-                    let reviewer = build_reviewer(&cli, Backend::Api, agent_cwd)?;
+                    let reviewer =
+                        build_reviewer(&cli, Backend::Api, agent_cwd, &Config::default())?;
                     readcode::eval::run_suite(&corpus, &suite, reviewer.as_ref(), trials)?
                 }
                 EvalTarget::Acp => {
-                    let reviewer = build_reviewer(&cli, Backend::Acp, agent_cwd)?;
+                    let reviewer =
+                        build_reviewer(&cli, Backend::Acp, agent_cwd, &Config::default())?;
                     readcode::eval::run_suite(&corpus, &suite, reviewer.as_ref(), trials)?
                 }
             };
@@ -761,7 +790,7 @@ fn main() -> Result<()> {
 /// Explicit flag, then `READCODE_REVIEWER`, then auto-detect: a configured agent
 /// beats an API key, because that is the choice the user already made once.
 /// There is no offline fallback — grading needs a model.
-fn choose_backend(cli: &Cli) -> Option<Backend> {
+fn choose_backend(cli: &Cli, config: &Config) -> Option<Backend> {
     if let Some(requested) = cli.reviewer {
         return Some(requested);
     }
@@ -779,6 +808,13 @@ fn choose_backend(cli: &Cli) -> Option<Backend> {
         }
         _ => {}
     }
+    // The settings file is the answer the user already gave to this question;
+    // only a variable set in the current shell outranks it.
+    match config.reviewer.as_deref() {
+        Some("api") => return Some(Backend::Api),
+        Some("acp") => return Some(Backend::Acp),
+        _ => {}
+    }
     let agent_configured = std::env::var("READCODE_AGENT")
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
@@ -789,6 +825,19 @@ fn choose_backend(cli: &Cli) -> Option<Backend> {
         return Some(Backend::Api);
     }
     None
+}
+
+/// `--model` beats `READCODE_MODEL` beats the settings file. The env var is read
+/// by the reviewers already; this only needs the two ends it cannot see.
+fn effective_model(cli: &Cli, config: &Config) -> Option<String> {
+    cli.model
+        .clone()
+        .or_else(|| {
+            std::env::var("READCODE_MODEL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .or_else(|| config.model.clone())
 }
 
 /// Neither configured: say exactly what to set, once, and stop. A grader that
@@ -803,22 +852,29 @@ fn no_reviewer() -> anyhow::Error {
     )
 }
 
-fn build_reviewer(cli: &Cli, backend: Backend, agent_cwd: PathBuf) -> Result<Box<dyn Reviewer>> {
+fn build_reviewer(
+    cli: &Cli,
+    backend: Backend,
+    agent_cwd: PathBuf,
+    config: &Config,
+) -> Result<Box<dyn Reviewer>> {
     match backend {
         Backend::Api => {
             let mut reviewer = ApiReviewer::from_env().context(
                 "no API key found — set READCODE_API_KEY (or OPENAI_API_KEY / ANTHROPIC_API_KEY), or use --reviewer acp",
             )?;
-            if let Some(model) = &cli.model {
-                reviewer.model = model.clone();
-            }
+            reviewer.model = effective_model(cli, config).unwrap_or(reviewer.model);
             Ok(Box::new(reviewer))
         }
         Backend::Acp => {
             let mut reviewer = AcpReviewer::from_env(agent_cwd);
-            if let Some(model) = &cli.model {
-                reviewer.model = Some(model.clone());
+            // A command from the settings file, unless this shell says otherwise.
+            if std::env::var("READCODE_AGENT").is_err()
+                && let Some(agent) = &config.agent
+            {
+                reviewer.set_command(agent);
             }
+            reviewer.model = effective_model(cli, config).or(reviewer.model);
             // Fail here, before the level question and before a single answer is
             // typed: the reviewer would refuse later anyway, and losing a sitting
             // to it is unforgivable.

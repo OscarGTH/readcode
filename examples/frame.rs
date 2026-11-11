@@ -106,15 +106,22 @@ fn main() -> Result<()> {
     }
     type_text(&mut app, typing);
 
-    if mode == "review" {
-        // Finish the sitting, so the review covers every prompt.
-        app.on_key(tui::Key::Enter);
+    if mode == "confirm" {
+        // Every prompt answered: this frame is the check screen itself.
+    } else if mode == "review" {
+        // Send the answers, so the review covers every prompt.
+        app.on_key(tui::Key::Submit);
 
         let reviewer = build_reviewer()?;
         let grade = reviewer
             .grade(snippet, &app.prompts, &app.annotations())
             .context("grading the canned sitting")?;
         app.finish(grade);
+    } else if app.phase == tui::Phase::Confirm {
+        // The annotation view: reopen the last answer so the code and its notes
+        // are on screen, with that prompt's question under it.
+        let last = app.prompts.len().saturating_sub(1);
+        app.edit(last);
     }
 
     let height: u16 = args

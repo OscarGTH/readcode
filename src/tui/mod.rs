@@ -80,6 +80,7 @@ pub fn translate(key: KeyEvent) -> Key {
             'j' => Key::Newline,
             'u' => Key::Clear,
             'b' => Key::Back,
+            's' => Key::Submit,
             'h' => Key::Backspace,
             _ => Key::Other,
         },
@@ -132,6 +133,10 @@ mod tests {
         assert_eq!(
             translate(event(KeyCode::Char('b'), KeyModifiers::CONTROL)),
             Key::Back
+        );
+        assert_eq!(
+            translate(event(KeyCode::Char('s'), KeyModifiers::CONTROL)),
+            Key::Submit
         );
     }
 

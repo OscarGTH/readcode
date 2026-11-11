@@ -350,6 +350,54 @@ pub fn level_advice(corpus: &Corpus, progress: &Progress) -> Option<String> {
     None
 }
 
+/// A numbered choice with a default, used by the first-run questions.
+///
+/// Returns the chosen index. Piped input that runs out takes the default, so a
+/// non-interactive run never hangs on a question nobody can answer.
+pub fn ask_choice(
+    term: &mut Terminal<'_>,
+    label: &str,
+    options: &[String],
+    default: usize,
+) -> Result<usize> {
+    for (index, option) in options.iter().enumerate() {
+        writeln!(
+            term.out,
+            "  {} {}",
+            term.style.cyan(&format!("{} ·", index + 1)),
+            option
+        )?;
+    }
+    for _ in 0..3 {
+        write!(
+            term.out,
+            "{} ",
+            term.style
+                .cyan(&format!("{label} 1-{} [{}]:", options.len(), default + 1))
+        )?;
+        term.out.flush()?;
+
+        let mut line = String::new();
+        let read = term.input.read_line(&mut line)?;
+        let answer = line.trim();
+        if read == 0 || answer.is_empty() {
+            return Ok(default);
+        }
+        if let Ok(number) = answer.parse::<usize>()
+            && (1..=options.len()).contains(&number)
+        {
+            return Ok(number - 1);
+        }
+        writeln!(
+            term.out,
+            "{}",
+            term.style
+                .yellow(&format!("pick a number from 1 to {}", options.len()))
+        )?;
+    }
+    Ok(default)
+}
+
 /// `go` → `Go`, `rust` → `Rust`: a language name in a sentence, not an id.
 fn display_name(language: &str) -> String {
     match language {
