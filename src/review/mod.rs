@@ -14,7 +14,7 @@ pub mod contract;
 use std::collections::BTreeMap;
 
 use anyhow::{Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::snippet::{Prompt, Snippet};
 use crate::srs::{Verdict, combine};
@@ -36,7 +36,7 @@ impl Annotation {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptGrade {
     pub prompt: usize,
     pub verdict: Verdict,
@@ -48,7 +48,7 @@ pub struct PromptGrade {
     pub concepts: Vec<(String, Verdict)>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grade {
     pub reviewer: String,
     pub prompts: Vec<PromptGrade>,

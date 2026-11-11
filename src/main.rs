@@ -139,6 +139,11 @@ enum Command {
         #[arg(long)]
         write: bool,
     },
+    /// Look at the grading results of past sittings.
+    History {
+        /// Which one to open, counting from the newest (1). Omit to list them.
+        index: Option<usize>,
+    },
     /// Set up, or change, who grades you: reviewer, agent, model.
     Setup,
     /// Show or switch the language you are reading in.
@@ -213,6 +218,80 @@ fn main() -> Result<()> {
     }
 
     match cli.command.clone().unwrap_or(Command::Next) {
+        Command::History { index } => {
+            let mut out = io::stdout();
+            let history = readcode::history::History::load(&data_dir);
+            if history.sittings.is_empty() {
+                writeln!(
+                    out,
+                    "{}",
+                    style.dim("no sittings yet — `readcode` keeps one each time it grades you")
+                )?;
+                return Ok(());
+            }
+            match index {
+                None => {
+                    writeln!(
+                        out,
+                        "{}",
+                        style.bold(&format!("history · {} sittings", history.sittings.len()))
+                    )?;
+                    for (position, sitting) in history.sittings.iter().enumerate() {
+                        writeln!(
+                            out,
+                            "  {} {}  {}  {}",
+                            style.cyan(&format!("{:>2}", position + 1)),
+                            style.dim(&readcode::history::when(sitting.at, now)),
+                            style.bold(&sitting.snippet),
+                            style.dim(&readcode::history::summary(&sitting.grade))
+                        )?;
+                        writeln!(out, "     {}", style.dim(&sitting.title))?;
+                    }
+                    writeln!(
+                        out,
+                        "{}",
+                        style.dim("`readcode history <n>` opens the grading page again")
+                    )?;
+                }
+                Some(index) => {
+                    let Some(sitting) = index
+                        .checked_sub(1)
+                        .and_then(|position| history.sittings.get(position))
+                    else {
+                        bail!(
+                            "there is no sitting {index} — `readcode history` lists {} of them",
+                            history.sittings.len()
+                        );
+                    };
+                    let snippet = sitting.snippet();
+                    let prompts = snippet.prompts(sitting.asks());
+                    writeln!(
+                        out,
+                        "{}",
+                        style.dim(&format!(
+                            "{} · answered {}",
+                            snippet.title,
+                            readcode::history::when(sitting.at, now)
+                        ))
+                    )?;
+                    let mut input = io::stdin().lock();
+                    let mut term = session::Terminal {
+                        input: &mut input,
+                        out: &mut out,
+                        style,
+                    };
+                    session::view_grade(
+                        &snippet,
+                        &prompts,
+                        &sitting.grade,
+                        &sitting.answers,
+                        &mut term,
+                    )?;
+                }
+            }
+            Ok(())
+        }
+
         Command::Setup => {
             let mut input = io::stdin().lock();
             let mut out = io::stdout();
@@ -339,8 +418,21 @@ fn main() -> Result<()> {
                     )?
                 }
             };
-            if outcome.is_some() {
+            if let Some(outcome) = &outcome {
                 progress.save(&progress_path)?;
+                // The grade is worth keeping: mastery keeps the number, this keeps
+                // the page it was written on.
+                let mut history = readcode::history::History::load(&data_dir);
+                history.record(readcode::history::Sitting::new(
+                    chosen,
+                    outcome.mode,
+                    outcome.grade.clone(),
+                    outcome.answers.clone(),
+                    now,
+                ));
+                history.save(&data_dir)?;
+            }
+            if outcome.is_some() {
                 let view = session::progress_view(&corpus, &progress, now);
                 if let Some(rung) = view
                     .ladder

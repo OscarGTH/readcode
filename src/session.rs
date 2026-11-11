@@ -3,7 +3,7 @@
 //! injected so the whole loop runs in tests without a terminal.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{BufRead, Write};
+use std::io::{BufRead, IsTerminal, Write};
 
 use anyhow::{Context, Result, bail};
 
@@ -33,6 +33,8 @@ pub struct Outcome {
     pub concepts_touched: usize,
     /// Concepts due for review right now, after this sitting.
     pub due_now: usize,
+    /// What was written, in prompt order, so the sitting can be kept.
+    pub answers: Vec<String>,
 }
 
 /// The snippet that most wants to be seen: overdue and weak concepts first,
@@ -657,7 +659,53 @@ pub fn run(
         mode,
         concepts_touched,
         due_now,
+        answers: annotations
+            .iter()
+            .map(|annotation| annotation.text.clone())
+            .collect(),
     }))
+}
+
+/// A grading page from the history, re-read.
+///
+/// The same view the sitting ended on: the code, what was written, the verdicts
+/// and the lessons. Read-only — scroll, then leave.
+pub fn view_grade(
+    snippet: &Snippet,
+    prompts: &[crate::snippet::Prompt],
+    grade: &Grade,
+    answers: &[String],
+    term: &mut Terminal<'_>,
+) -> Result<()> {
+    let interactive = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    if !interactive {
+        ui::print_grade(term.out, term.style, prompts, grade)?;
+        return Ok(());
+    }
+
+    let mut app = crate::tui::App::new(
+        snippet,
+        prompts.to_vec(),
+        Asks::Blocks,
+        grade.reviewer.clone(),
+    );
+    app.answers = answers.to_vec();
+    app.finish(grade.clone());
+
+    let mut guard = crate::tui::Guard::enter()?;
+    loop {
+        guard
+            .terminal()
+            .draw(|frame| crate::tui::draw(frame, &app))?;
+        match guard.next_key()? {
+            crate::tui::Key::Char('j') | crate::tui::Key::Down => app.scroll_by(1),
+            crate::tui::Key::Char('k') | crate::tui::Key::Up => app.scroll_by(-1),
+            crate::tui::Key::PageDown => app.scroll_by(10),
+            crate::tui::Key::PageUp => app.scroll_by(-10),
+            _ => break,
+        }
+    }
+    Ok(())
 }
 
 /// The interactive sitting: the code on screen with your notes written on it,
@@ -726,6 +774,7 @@ pub fn run_tui(
         );
     };
 
+    let answers = app.answers.clone();
     let (concepts_touched, due_now) = commit(snippet, mode, &grade, progress, now, term)?;
 
     Ok(Some(Outcome {
@@ -733,6 +782,7 @@ pub fn run_tui(
         mode,
         concepts_touched,
         due_now,
+        answers,
     }))
 }
 

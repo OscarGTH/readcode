@@ -74,6 +74,7 @@ readcode status     # what you have mastered, what is due
 readcode list       # the snippets available, with their levels
 readcode lang       # the languages in the corpus, and how far you are in each
 readcode level      # what level you are reading at
+readcode history    # past sittings, and the grading page for each
 readcode setup      # change reviewer, agent or model
 readcode draft f.rs # turn a file into a draft snippet with your reviewer
 readcode models     # which models your agent offers
@@ -234,6 +235,24 @@ comment on whichever line happened to open the block.
 You do not choose: the first visit uses whatever the snippet is authored for, and the
 next visit to the same snippet **alternates** to the other mode. Same code, different
 question. `--lines` / `--blocks` override it for one sitting.
+
+### Reading a sitting again
+
+Every graded sitting is kept, so the page is not something you only see once:
+
+```sh
+readcode history      # what you have sat, when, and how it went
+readcode history 2    # that sitting's grading page, in full
+```
+
+The list dates each one (`2 hours ago · 2026-11-11 08:14`) and counts its verdicts
+(`2 correct · 1 partial`). Opening one gives the same page the sitting ended on — the code,
+the question that was asked, what you wrote, every verdict, the lesson and the reading — and
+it scrolls with `j`/`k` until you leave.
+
+The snippet is stored with the sitting rather than looked up later: corpora change, and a
+history that says "snippet not found" is not a history. The file is `history.json` beside
+`progress.json`, newest first, capped at 200 sittings.
 
 ### Seeing where you are
 

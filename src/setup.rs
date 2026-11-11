@@ -179,6 +179,10 @@ fn teach(term: &mut Terminal<'_>, corpus: &Corpus) -> Result<()> {
         ),
         ("readcode level", "the rungs, with yours marked"),
         ("readcode list", "every snippet, with its level"),
+        (
+            "readcode history",
+            "past sittings, and the grading page for each",
+        ),
         ("readcode setup", "change reviewer, agent or model"),
     ];
     for (command, what) in lines {

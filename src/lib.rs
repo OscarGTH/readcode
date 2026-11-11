@@ -17,6 +17,7 @@ pub mod docs;
 pub mod draft;
 pub mod eval;
 pub mod highlight;
+pub mod history;
 pub mod review;
 pub mod session;
 pub mod setup;
