@@ -218,13 +218,17 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
     for (index, _line) in lines.iter().enumerate() {
         let number = index + 1;
 
-        // A note about this line alone goes above it, where a comment about a
-        // line belongs — question first, so the answer has something to be an
-        // answer to.
-        if let Some(note) = notes.get(&number)
-            && note.end == number
-        {
-            push_note(&mut rows, gutter, text_width, note, None);
+        // A note goes above the span it is about — one line or five — because a
+        // comment above the code is how you annotate a file. A note about several
+        // lines is labelled with its span so it cannot be mistaken for a remark
+        // on the first line alone.
+        if let Some(note) = notes.get(&number) {
+            let label = if note.end > number {
+                Some(format!("on lines {number}-{}: ", note.end))
+            } else {
+                None
+            };
+            push_note(&mut rows, gutter, text_width, note, label.as_deref());
         }
 
         if focus.is_some_and(|(start, _)| number == start) {
@@ -258,15 +262,6 @@ fn draw_code(frame: &mut Frame, app: &App, area: Rect, follow: bool) {
         }
         rows.push(Line::from(spans));
 
-        // A note about a whole block goes after the block's last line, labelled
-        // with the span, so it never reads as a comment on its first line.
-        for (start, note) in notes
-            .iter()
-            .filter(|(start, note)| note.end == number && **start < note.end)
-        {
-            let label = format!("on lines {start}-{number}: ");
-            push_note(&mut rows, gutter, text_width, note, Some(&label));
-        }
     }
 
     let height = area.height as usize;
@@ -953,7 +948,7 @@ mod tests {
     }
 
     #[test]
-    fn a_block_note_sits_after_the_block_and_says_which_lines_it_covers() {
+    fn a_block_note_sits_above_the_block_and_says_which_lines_it_covers() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("rust-004").unwrap();
         let prompts = snippet.prompts(crate::snippet::Asks::Blocks);
@@ -976,10 +971,12 @@ mod tests {
             screen.contains("// the counter starts at zero"),
             "the answer follows its question:\n{screen}"
         );
+        // Above the first line of the span, like a comment on it — not parked
+        // after the closing brace where it reads as a remark on the last line.
         let block_start = screen.find(" 1 │").expect("line 1");
+        assert!(note < block_start, "the note precedes the block:\n{screen}");
         let block_end = screen.find(" 5 │").expect("line 5");
-        assert!(note > block_end, "the note follows the block:\n{screen}");
-        assert!(note > block_start, "{screen}");
+        assert!(note < block_end, "{screen}");
     }
 
     #[test]
