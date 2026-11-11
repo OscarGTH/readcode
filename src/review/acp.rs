@@ -509,6 +509,55 @@ pub struct ModelOption {
     pub name: String,
 }
 
+/// Whether the agent lists a model id.
+pub fn model_is_offered(model: &str, options: &[ModelOption]) -> bool {
+    options.is_empty() || options.iter().any(|option| option.value == model)
+}
+
+/// What to say when the id is not in the agent's list. Naming the ones it does
+/// offer is the difference between a dead end and a fix.
+pub fn unknown_model_message(model: &str, options: &[ModelOption]) -> String {
+    let mut listed: Vec<&str> = options.iter().map(|option| option.value.as_str()).collect();
+    let more = listed.len().saturating_sub(12);
+    listed.truncate(12);
+    format!(
+        "`{model}` is not a model this agent offers — it lists: {}{}\n\n  readcode models   # the full list, with free tiers marked",
+        listed.join(", "),
+        if more > 0 {
+            format!(", and {more} more")
+        } else {
+            String::new()
+        }
+    )
+}
+
+/// Extra words for a turn that failed because of the model, where the agent's own
+/// error (a JSON-RPC internal error) says nothing useful.
+pub fn turn_error(error: anyhow::Error, model: Option<&str>) -> anyhow::Error {
+    match turn_hint(&format!("{error:#}"), model) {
+        Some(hint) => anyhow::anyhow!("{error:#}\n\n{hint}"),
+        None => error,
+    }
+}
+
+/// The hint itself, kept separate so it can be tested without an agent.
+pub fn turn_hint(error: &str, model: Option<&str>) -> Option<String> {
+    let lower = error.to_lowercase();
+    let about_the_model = lower.contains("model")
+        && (lower.contains("not supported")
+            || lower.contains("not found")
+            || lower.contains("unavailable")
+            || lower.contains("unauthorized"));
+    if !about_the_model {
+        return None;
+    }
+    Some(format!(
+        "the agent accepted `{}` as a setting but could not run it — usually the provider behind it is not available in the agent right now (an expired login, or the model withdrawn). Try `{}` in the agent itself, then `readcode models`.",
+        model.unwrap_or("the model"),
+        model.unwrap_or("it")
+    ))
+}
+
 /// Reads the `model` select out of `session/new`'s `configOptions`, flattening
 /// grouped options. Returns `(current value, every option)`.
 pub fn model_options(config_options: &Value) -> Option<(String, Vec<ModelOption>)> {
@@ -598,9 +647,15 @@ impl AcpReviewer {
         client.initialize()?;
         client.new_session(&self.cwd)?;
 
-        // Nothing is set here: an explicit model is applied by `grade` and `ask`,
-        // which refuse to run without one. This method is also how `readcode
-        // models` opens a session, and that has to work before a model is chosen.
+        // Apply the pinned model. Without this the session runs on whatever the
+        // agent defaults to, which is exactly the silent fallback 0.10.1 set out
+        // to remove — and it looked fine, because the reviewer's own label came
+        // from the flag rather than from the agent.
+        if let Some(model) = self.model.as_deref() {
+            client
+                .set_config_option("model", model)
+                .with_context(|| format!("the agent refused the model `{model}`"))?;
+        }
         Ok(client)
     }
 
@@ -617,6 +672,31 @@ impl AcpReviewer {
                 self.program
             ),
         }
+    }
+
+    /// An id the agent will *accept* is not the same as one it can run: setting an
+    /// unknown model succeeds, and the failure only arrives inside the turn — after
+    /// the learner has answered every prompt. Check the offered list first.
+    fn verify_model(&self, client: &AcpClient) -> Result<()> {
+        let Some(model) = self.model.as_deref() else {
+            return Ok(());
+        };
+        let Some((_current, options)) = model_options(&client.config_options) else {
+            // An agent that exposes no model choice gets the benefit of the doubt.
+            return Ok(());
+        };
+        if model_is_offered(model, &options) {
+            return Ok(());
+        }
+        bail!("{}", unknown_model_message(model, &options))
+    }
+
+    /// A session, opened and thrown away, to find out before the sitting whether
+    /// the pinned model is one the agent can run. Spends a second, not tokens.
+    pub fn check(&self) -> Result<()> {
+        self.require_model()?;
+        let client = self.connect()?;
+        self.verify_model(&client)
     }
 
     /// Opens a session and reports the models this agent offers. No prompt is
@@ -666,8 +746,11 @@ impl Reviewer for AcpReviewer {
     ) -> Result<Grade> {
         self.require_model()?;
         let mut client = self.connect()?;
+        self.verify_model(&client)?;
         let prompt = contract::prime(&contract::task(snippet, prompts, annotations));
-        let text = client.prompt(&prompt)?;
+        let text = client
+            .prompt(&prompt)
+            .map_err(|error| turn_error(error, self.model.as_deref()))?;
         let raw = parse_json_object(&text)
             .with_context(|| format!("the agent ({}) did not return a grade", client.agent_name))?;
         let mut grade = Grade::from_raw(prompts, raw, &self.name())?;
@@ -686,7 +769,10 @@ impl Reviewer for AcpReviewer {
     fn ask(&self, task: &str) -> Result<String> {
         self.require_model()?;
         let mut client = self.connect()?;
-        client.prompt(&contract::prime(task))
+        self.verify_model(&client)?;
+        client
+            .prompt(&contract::prime(task))
+            .map_err(|error| turn_error(error, self.model.as_deref()))
     }
 }
 
@@ -751,6 +837,58 @@ concepts = ["rust.binding"]
             }
             other => panic!("expected an error response, got {:?}", other.is_some()),
         }
+    }
+
+    fn options(values: &[&str]) -> Vec<ModelOption> {
+        values
+            .iter()
+            .map(|value| ModelOption {
+                value: value.to_string(),
+                name: value.to_string(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_model_the_agent_does_not_list_is_named_with_the_ones_it_does() {
+        let offered = options(&["deepseek/deepseek-v4-pro", "opencode/big-pickle"]);
+        assert!(model_is_offered("opencode/big-pickle", &offered));
+        assert!(!model_is_offered("github-copilot/gpt-6-luna", &offered));
+
+        let message = unknown_model_message("github-copilot/gpt-6-luna", &offered);
+        assert!(
+            message.contains("not a model this agent offers"),
+            "{message}"
+        );
+        assert!(message.contains("deepseek/deepseek-v4-pro"), "{message}");
+        assert!(message.contains("readcode models"), "{message}");
+    }
+
+    #[test]
+    fn an_agent_with_no_model_choice_is_left_alone() {
+        // Some agents expose no model list at all; the id gets the benefit of the doubt.
+        assert!(model_is_offered("anything", &[]));
+    }
+
+    #[test]
+    fn a_long_list_is_shortened_but_counted() {
+        let many: Vec<String> = (0..20).map(|index| format!("x/model-{index}")).collect();
+        let refs: Vec<&str> = many.iter().map(String::as_str).collect();
+        let message = unknown_model_message("nope", &options(&refs));
+        assert!(message.contains("and 8 more"), "{message}");
+    }
+
+    #[test]
+    fn a_turn_that_failed_because_of_the_model_says_so() {
+        let error = "the agent failed the turn: Internal error: The requested model is not supported. (code -32603)";
+        let hint = turn_hint(error, Some("github-copilot/gpt-6-luna")).expect("a hint");
+        assert!(hint.contains("could not run it"), "{hint}");
+        assert!(hint.contains("github-copilot/gpt-6-luna"), "{hint}");
+        assert!(hint.contains("readcode models"), "{hint}");
+
+        // An unrelated failure gets no lecture.
+        assert!(turn_hint("the agent exited mid-turn", None).is_none());
+        assert!(turn_hint("connection reset by peer", None).is_none());
     }
 
     #[test]

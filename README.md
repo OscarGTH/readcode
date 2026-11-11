@@ -150,6 +150,11 @@ the full-screen view the failure leaves your answers on screen with `r` to try a
 If it keeps failing, the error names what the parser objected to and writes the reviewer's
 whole reply to `$TMPDIR/readcode-last-reply.txt`, which is the file worth reporting.
 
+A turn that dies with a bare JSON-RPC internal error (`The requested model is not supported.
+(code -32603)`) is the agent's provider refusing, not `readcode` misbehaving: the id was
+accepted as a setting but the provider behind it is not available in that session — usually a
+lapsed login or a model withdrawn upstream. The error says so and points at `readcode models`.
+
 ```sh
 readcode --snippet 002     # a specific snippet (id, or any unambiguous suffix)
 readcode --lines           # force line-by-line; --blocks forces the other way
@@ -228,6 +233,8 @@ Grading needs a model, so the first run needs one of two things set up:
 
 **An ACP agent needs a pinned model.** `--model <id>` or `READCODE_MODEL=<id>`, with no
 fallback: the agent's own default is never used, even when it is the only thing available.
+Before the first question, `readcode` opens the agent once and checks that the id is one it
+offers — a second of setup rather than a sitting lost to a model the agent cannot run.
 `readcode models` lists what the agent offers and marks the free tiers, so the choice is
 made with the price in view. If you ask for a model the agent does not have, the run stops
 rather than grading with something else.
@@ -452,7 +459,7 @@ must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
 ## Contributing
 
 ```sh
-cargo test                        # 175 tests, no network, no agent
+cargo test                        # 183 tests, no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs

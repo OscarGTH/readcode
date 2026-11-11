@@ -90,6 +90,14 @@ pub trait Reviewer {
         annotations: &[Annotation],
     ) -> Result<Grade>;
 
+    /// Check — cheaply, without a prompt — that this reviewer can actually grade:
+    /// the model is pinned, the agent is reachable, the id is one it offers. Run
+    /// before a sitting starts, because a failure discovered afterwards has cost
+    /// the learner every answer they gave.
+    fn check(&self) -> Result<()> {
+        Ok(())
+    }
+
     /// A plain request and reply, with the grading contract in front so the
     /// reviewer knows what the tool is for. Used to draft corpus entries.
     fn ask(&self, task: &str) -> Result<String> {

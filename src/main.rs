@@ -783,6 +783,7 @@ fn build_reviewer(cli: &Cli, backend: Backend, agent_cwd: PathBuf) -> Result<Box
             // typed: the reviewer would refuse later anyway, and losing a sitting
             // to it is unforgivable.
             reviewer.require_model()?;
+            reviewer.check()?;
             Ok(Box::new(reviewer))
         }
     }
