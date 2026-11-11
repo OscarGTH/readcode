@@ -376,10 +376,12 @@ fn draw_ask(frame: &mut Frame, app: &App, area: Rect) {
         .wrap(Wrap { trim: false }),
         question,
     );
+    // Quiet print, not competing with the question above it: the question is
+    // bold and this is the darkest thing on screen.
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
             " your words · Enter submits · Ctrl-J newline · Ctrl-B back",
-            Theme::dim(),
+            Theme::hint(),
         ))),
         hint,
     );
@@ -557,18 +559,6 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             rows.push(Line::raw(""));
         }
-        // The verdict sits on the first code row, so one prompt is one block
-        // rather than a header followed by the code it describes.
-        code_rows(
-            &mut rows,
-            &tokens,
-            gutter,
-            prompt.start,
-            prompt.end,
-            verdict_mark(graded.verdict),
-            graded.verdict,
-        );
-
         // The question belongs here: without it "you" is an answer to
         // something the learner has to remember from before the grading.
         labelled(
@@ -587,6 +577,19 @@ fn draw_review(frame: &mut Frame, app: &App, area: Rect) {
             .filter(|text| !text.is_empty())
             .unwrap_or("(left blank)");
         labelled(&mut rows, "you", answer, Theme::dim(), Theme::note(), width);
+
+        // The question and the answer come first, then the code they are about
+        // with the verdict on its first row: the same order as the notes written
+        // during the sitting, so the page reads the way the sitting did.
+        code_rows(
+            &mut rows,
+            &tokens,
+            gutter,
+            prompt.start,
+            prompt.end,
+            verdict_mark(graded.verdict),
+            graded.verdict,
+        );
 
         {
             // Even a correct answer gets its explanation: it may have been a guess,

@@ -167,13 +167,14 @@ what was right, what was thin, and what you missed:
 
 ![The review: for each prompt, the code it was about, your answer, the verdict, what you missed, and the explanation](docs/tui-review.png)
 
-Each entry keeps the code beside your answer, because the moment you want to know *why*
-something was wrong is the moment you need to see what you were looking at. The verdict
-rides the line it is about, so one prompt is one block rather than a heading followed by
-the code it describes:
+Each entry keeps the code under your answer, because the moment you want to know *why*
+something was wrong is the moment you need to see what you were looking at. The question and
+your answer come first, then the code with the verdict on its first row — the same order as
+the notes you wrote during the sitting:
 
+- `ask` — the question you were answering, then `you` — your words, both above the code they
+  are about, so an entry reads the way the sitting did
 - `✓ 4 │ let total = apples + pears;` — the mark is the verdict, the line is what you read
-- `you` — your words, under the code they explain
 - `review` — only when something was off: what the answer did and did not say
 - `missed · …` — the points it left out; a concept the reviewer could not judge from that
   answer is left out rather than marked "unknown", since a line is only asked to prove what
