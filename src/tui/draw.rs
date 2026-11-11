@@ -117,8 +117,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Phase::Confirm => 6,
         Phase::Annotate | Phase::Grading => question_rows + 5,
     };
+    let header_height = if app.reason.is_empty() || app.phase == Phase::Review {
+        1
+    } else {
+        2
+    };
     let [header, body, ask, footer] = Layout::vertical([
-        Constraint::Length(1),
+        Constraint::Length(header_height),
         Constraint::Min(5),
         Constraint::Length(input_height),
         Constraint::Length(1),
@@ -134,12 +139,22 @@ pub fn draw(frame: &mut Frame, app: &App) {
         }
         Phase::Grading => {
             draw_code(frame, app, body, false);
+            // A clock, because a still screen for forty seconds reads as a hang
+            // and people kill it — losing the sitting they just answered.
+            let elapsed = app
+                .grading_for
+                .map(|elapsed| format!(" · {}s", elapsed.as_secs()))
+                .unwrap_or_default();
             let waiting = Paragraph::new(Text::from(vec![
-                Line::from(Span::styled("  grading · ", Theme::dim())),
+                Line::from(Span::styled(format!("  grading{elapsed} · "), Theme::dim())),
                 Line::raw(""),
                 Line::from(Span::styled(
                     format!("  {} is reading your notes", app.reviewer),
                     Theme::dim(),
+                )),
+                Line::from(Span::styled(
+                    "  this usually takes 15–40 s · the answers are safe",
+                    Theme::hint(),
                 )),
             ]));
             frame.render_widget(waiting, ask);
@@ -158,6 +173,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
 }
 
 fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
+    let [title_row, why_row] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(area.height.saturating_sub(1)),
+    ])
+    .areas(area);
+    let area = title_row;
     let [left, right] =
         Layout::horizontal([Constraint::Min(20), Constraint::Length(34)]).areas(area);
 
@@ -192,6 +213,19 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
         .alignment(Alignment::Right),
         right,
     );
+
+    // Why this snippet: one quiet line under the title, gone during the review
+    // where the question no longer matters.
+    if why_row.height > 0 && !app.reason.is_empty() && app.phase != Phase::Review {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" why this · ", Theme::gutter()),
+                Span::styled(app.reason.clone(), Theme::hint()),
+            ]))
+            .wrap(Wrap { trim: true }),
+            why_row,
+        );
+    }
 }
 
 /// The code, with each answered line carrying its note above it, the way you
@@ -1496,5 +1530,42 @@ mod tests {
         assert!(screen.contains("answer 1 of "), "{screen}");
         assert!(screen.contains("\"answer 0\""), "{screen}");
         assert!(screen.contains("Ctrl-S grades"), "{screen}");
+    }
+
+    #[test]
+    fn the_screen_says_why_this_snippet() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-006").unwrap();
+        let mut app = App::new(
+            snippet,
+            snippet.prompts(Asks::Blocks),
+            Asks::Blocks,
+            "check".into(),
+        );
+        app.reason = "due here: `rust.type.default_int`".to_string();
+        let screen = screen(&app, 96, 26);
+        assert!(screen.contains("why this"), "{screen}");
+        assert!(screen.contains("rust.type.default_int"), "{screen}");
+        // It sits above the code, not in the panel where the answer is typed.
+        let why = screen.find("why this").unwrap();
+        let code = screen.find("fn main()").unwrap();
+        assert!(why < code, "{screen}");
+    }
+
+    #[test]
+    fn grading_shows_a_clock_and_a_reassurance() {
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-006").unwrap();
+        let mut app = App::new(
+            snippet,
+            snippet.prompts(Asks::Blocks),
+            Asks::Blocks,
+            "acp:opencode (deepseek)".into(),
+        );
+        app.phase = Phase::Grading;
+        app.grading_for = Some(std::time::Duration::from_secs(12));
+        let screen = screen(&app, 96, 26);
+        assert!(screen.contains("12s"), "{screen}");
+        assert!(screen.contains("the answers are safe"), "{screen}");
     }
 }

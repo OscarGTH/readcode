@@ -61,6 +61,10 @@ pub struct App<'a> {
     pub cursor: usize,
     /// First visible row of the body pane.
     pub scroll: usize,
+    /// Why this snippet was chosen, shown above the code while answering.
+    pub reason: String,
+    /// How long the reviewer has been working, once the call is in flight.
+    pub grading_for: Option<std::time::Duration>,
     /// Which answered prompt the confirmation list has selected.
     pub confirm_index: usize,
     /// True when the current prompt was reopened from the confirmation list, so
@@ -72,6 +76,21 @@ pub struct App<'a> {
 }
 
 impl<'a> App<'a> {
+    /// Starts mid-sitting, with answers that were saved when it was left.
+    pub fn resume(mut self, answers: Vec<String>) -> Self {
+        if answers.len() == self.answers.len() {
+            self.answers = answers;
+            self.index = self
+                .answers
+                .iter()
+                .position(|answer| answer.trim().is_empty())
+                .unwrap_or(self.prompts.len().saturating_sub(1));
+            self.input = self.answers[self.index].chars().collect();
+            self.cursor = self.input.len();
+        }
+        self
+    }
+
     pub fn new(snippet: &'a Snippet, prompts: Vec<Prompt>, mode: Asks, reviewer: String) -> Self {
         let answers = vec![String::new(); prompts.len()];
         Self {
@@ -85,6 +104,8 @@ impl<'a> App<'a> {
             input: Vec::new(),
             cursor: 0,
             scroll: 0,
+            reason: String::new(),
+            grading_for: None,
             confirm_index: 0,
             editing: false,
             grade: None,

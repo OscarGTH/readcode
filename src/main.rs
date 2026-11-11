@@ -307,6 +307,47 @@ fn main() -> Result<()> {
             let mut input = io::stdin().lock();
             let mut out = io::stdout();
 
+            // A sitting left part-answered is worth more than a fresh pick, so it
+            // is offered before the language and level questions: continuing is
+            // the answer to all of them.
+            let mut draft = store::Draft::load(&data_dir).unwrap_or_default();
+            let mut resumed: Option<&readcode::snippet::Snippet> = None;
+            let interactive_now =
+                !cli.no_tui && io::stdin().is_terminal() && io::stdout().is_terminal();
+            if interactive_now && !draft.answers.is_empty() {
+                match corpus
+                    .snippets()
+                    .iter()
+                    .find(|snippet| snippet.id == draft.snippet)
+                {
+                    Some(snippet) => {
+                        let question = format!(
+                            "you left `{}` with {} answer{} saved — continue?",
+                            snippet.id,
+                            draft.answered(),
+                            if draft.answered() == 1 { "" } else { "s" }
+                        );
+                        let mut term = session::Terminal {
+                            input: &mut input,
+                            out: &mut out,
+                            style,
+                        };
+                        if session::ask_yes(&mut term, &question)? {
+                            resumed = Some(snippet);
+                            progress.language = Some(snippet.language.clone());
+                        } else {
+                            store::Draft::clear(&data_dir);
+                            draft = store::Draft::default();
+                        }
+                    }
+                    None => {
+                        // The snippet is gone from the corpus: nothing to resume.
+                        store::Draft::clear(&data_dir);
+                        draft = store::Draft::default();
+                    }
+                }
+            }
+
             // Nobody reads a README before the first sitting. If there is no
             // reviewer configured and a person is at the keyboard, ask now rather
             // than failing at grading time, after every answer has been typed.
@@ -347,7 +388,7 @@ fn main() -> Result<()> {
                 Some(language) => progress.level_of(language).is_none(),
                 None => progress.level.is_none(),
             };
-            if needs_level && cli.snippet.is_none() {
+            if needs_level && cli.snippet.is_none() && resumed.is_none() {
                 let level = {
                     let mut term = session::Terminal {
                         input: &mut input,
@@ -369,10 +410,13 @@ fn main() -> Result<()> {
                 progress.save(&progress_path)?;
             }
 
-            let chosen = match &cli.snippet {
-                Some(needle) => corpus.find(needle)?,
-                None => session::pick(&corpus, &progress, now)
-                    .context("the corpus is empty — `--corpus <dir>` to load some")?,
+            let chosen = match resumed {
+                Some(snippet) => snippet,
+                None => match &cli.snippet {
+                    Some(needle) => corpus.find(needle)?,
+                    None => session::pick(&corpus, &progress, now)
+                        .context("the corpus is empty — `--corpus <dir>` to load some")?,
+                },
             };
 
             let backend = choose_backend(&cli, &config).ok_or_else(no_reviewer)?;
@@ -406,6 +450,7 @@ fn main() -> Result<()> {
                         &mut progress,
                         now,
                         &mut term,
+                        &mut draft,
                     )?
                 } else {
                     session::run(
@@ -418,6 +463,12 @@ fn main() -> Result<()> {
                     )?
                 }
             };
+            if outcome.is_some() {
+                // Graded: the draft has served its purpose.
+                store::Draft::clear(&data_dir);
+            } else if draft.answered() > 0 {
+                draft.save(&data_dir)?;
+            }
             if let Some(outcome) = &outcome {
                 progress.save(&progress_path)?;
                 // The grade is worth keeping: mastery keeps the number, this keeps

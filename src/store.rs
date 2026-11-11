@@ -25,6 +25,58 @@ pub struct Event {
     pub verdict: Verdict,
 }
 
+/// A sitting that was abandoned with answers in it.
+///
+/// `Esc` used to mean "lose the last four minutes", which is the wrong trade on a
+/// train: the loop is finished by the third prompt, so the answers are worth
+/// keeping until the next run asks about them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Draft {
+    pub snippet: String,
+    /// In prompt order; empty strings are prompts not reached.
+    #[serde(default)]
+    pub answers: Vec<String>,
+    #[serde(default)]
+    pub at: u64,
+}
+
+impl Draft {
+    pub fn path(data_dir: &Path) -> PathBuf {
+        data_dir.join("draft.json")
+    }
+
+    pub fn load(data_dir: &Path) -> Option<Self> {
+        let draft: Self =
+            serde_json::from_str(&std::fs::read_to_string(Self::path(data_dir)).ok()?).ok()?;
+        draft
+            .answers
+            .iter()
+            .any(|answer| !answer.trim().is_empty())
+            .then_some(draft)
+    }
+
+    pub fn save(&self, data_dir: &Path) -> Result<()> {
+        std::fs::create_dir_all(data_dir).ok();
+        let path = Self::path(data_dir);
+        let temporary = path.with_extension("json.tmp");
+        std::fs::write(&temporary, serde_json::to_string_pretty(self)?)?;
+        std::fs::rename(&temporary, &path)?;
+        Ok(())
+    }
+
+    pub fn clear(data_dir: &Path) {
+        let _ = std::fs::remove_file(Self::path(data_dir));
+    }
+
+    /// How many prompts were answered, for the question that offers to resume.
+    pub fn answered(&self) -> usize {
+        self.answers
+            .iter()
+            .filter(|answer| !answer.trim().is_empty())
+            .count()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Progress {
     #[serde(default = "current_version")]

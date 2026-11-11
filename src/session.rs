@@ -40,6 +40,60 @@ pub struct Outcome {
 /// The snippet that most wants to be seen: overdue and weak concepts first,
 /// snippets never seen get a nudge, and the last snippet is skipped when there
 /// is anywhere else to go.
+/// One line saying why this snippet was chosen.
+///
+/// The scheduler is invisible otherwise: it hands you a file and you have no idea
+/// whether it is due, weak, or simply next. Naming the reason is what makes the
+/// repetition legible — and what makes a hard snippet feel chosen rather than
+/// random.
+pub fn pick_reason(snippet: &Snippet, progress: &Progress, now: u64) -> String {
+    let concepts = snippet.concepts();
+    let due: Vec<&String> = concepts
+        .iter()
+        .filter(|concept| {
+            progress
+                .concepts
+                .get(*concept)
+                .is_some_and(|state| state.due_at != 0 && state.due_at <= now)
+        })
+        .collect();
+    if !due.is_empty() {
+        let named = due
+            .iter()
+            .take(2)
+            .map(|concept| format!("`{concept}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return if due.len() > 2 {
+            format!("{} concepts here are due, including {named}", due.len())
+        } else {
+            format!("due here: {named}")
+        };
+    }
+    let unseen: Vec<&String> = concepts
+        .iter()
+        .filter(|concept| !progress.concepts.contains_key(*concept))
+        .collect();
+    if !unseen.is_empty() {
+        let named = unseen
+            .iter()
+            .take(2)
+            .map(|concept| format!("`{concept}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return if !progress.seen(&snippet.id) {
+            format!("new here: {named}")
+        } else {
+            format!(
+                "{} concept{} you have not met: {named}",
+                unseen.len(),
+                if unseen.len() == 1 { "" } else { "s" }
+            )
+        };
+    }
+    "nothing here is new; this is the weakest thing in the rotation".to_string()
+}
+
 /// The language in play. Before one is chosen, that is the corpus's main
 /// language — the one with the most material — rather than "all of them at
 /// once", which would mix two ladders into one menu.
@@ -352,6 +406,24 @@ pub fn level_advice(corpus: &Corpus, progress: &Progress) -> Option<String> {
     None
 }
 
+/// A yes/no question, defaulting to yes: the safe answer for "continue where you
+/// left off" is to continue.
+pub fn ask_yes(term: &mut Terminal<'_>, question: &str) -> Result<bool> {
+    write!(
+        term.out,
+        "{} ",
+        term.style.cyan(&format!("{question} [Y/n]:"))
+    )?;
+    term.out.flush()?;
+    let mut line = String::new();
+    let read = term.input.read_line(&mut line)?;
+    let answer = line.trim().to_lowercase();
+    if read == 0 || answer.is_empty() {
+        return Ok(true);
+    }
+    Ok(!matches!(answer.as_str(), "n" | "no"))
+}
+
 /// A numbered choice with a default, used by the first-run questions.
 ///
 /// Returns the chosen index. Piped input that runs out takes the default, so a
@@ -566,6 +638,14 @@ pub fn run(
         bail!("snippet `{}` produced no prompts", snippet.id);
     }
 
+    writeln!(
+        term.out,
+        "{}",
+        style.dim(&format!(
+            "why this · {}",
+            pick_reason(snippet, progress, now)
+        ))
+    )?;
     ui::print_header(term.out, style, snippet)?;
     writeln!(term.out)?;
     writeln!(
@@ -718,6 +798,7 @@ pub fn run_tui(
     progress: &mut Progress,
     now: u64,
     term: &mut Terminal<'_>,
+    draft: &mut crate::store::Draft,
 ) -> Result<Option<Outcome>> {
     let mode = snippet.resolve_mode(mode);
     let prompts = snippet.prompts(mode);
@@ -725,7 +806,11 @@ pub fn run_tui(
         bail!("snippet `{}` produced no prompts", snippet.id);
     }
 
-    let mut app = tui::App::new(snippet, prompts, mode, reviewer.name());
+    let mut app = crate::tui::App::new(snippet, prompts.clone(), mode, reviewer.name());
+    app.reason = pick_reason(snippet, progress, now);
+    if draft.snippet == snippet.id && !draft.answers.is_empty() {
+        app = app.resume(draft.answers.clone());
+    }
     // The guard restores the terminal when this block ends, including when
     // grading returns an error.
     let action = {
@@ -745,10 +830,26 @@ pub fn run_tui(
                     }
                 }
                 Action::Grade => {
-                    // Drawn before the call, because grading blocks for as long
-                    // as the agent takes.
-                    guard.terminal().draw(|frame| tui::draw(frame, &app))?;
-                    match reviewer.grade(snippet, &app.prompts, &app.annotations()) {
+                    // The call runs on another thread so the screen can keep
+                    // drawing: a static "grading…" for forty seconds is
+                    // indistinguishable from a hang, and a hang gets Ctrl-C.
+                    let annotations = app.annotations();
+                    let started = std::time::Instant::now();
+                    let joined = std::thread::scope(|scope| {
+                        let call =
+                            scope.spawn(|| reviewer.grade(snippet, &app.prompts, &annotations));
+                        while !call.is_finished() {
+                            app.grading_for = Some(started.elapsed());
+                            let _ = guard.terminal().draw(|frame| tui::draw(frame, &app));
+                            std::thread::sleep(std::time::Duration::from_millis(120));
+                        }
+                        call.join()
+                    });
+                    app.grading_for = None;
+                    let graded = joined
+                        .map_err(|_| anyhow::anyhow!("the grading thread panicked"))
+                        .and_then(|graded| graded);
+                    match graded {
                         Ok(grade) => app.finish(grade),
                         Err(error) => app.fail(format!("{error:#}")),
                     }
@@ -758,11 +859,24 @@ pub fn run_tui(
     };
 
     if action == Action::Abort {
+        // Keep what was written: abandoning a sitting after four answers should
+        // cost the four answers, not the four minutes.
+        draft.snippet = snippet.id.clone();
+        draft.answers = app.answers.clone();
+        draft.at = now;
         writeln!(term.out)?;
         writeln!(
             term.out,
             "{}",
-            term.style.dim("stopped — this snippet was not saved")
+            if draft.answered() > 0 {
+                term.style.dim(&format!(
+                    "stopped — {} answer{} kept for next time (`readcode` offers to continue)",
+                    draft.answered(),
+                    if draft.answered() == 1 { "" } else { "s" }
+                ))
+            } else {
+                term.style.dim("stopped — nothing answered, nothing saved")
+            }
         )?;
         return Ok(None);
     }
@@ -917,7 +1031,7 @@ mod tests {
     /// Fails the first call with a parse error, then behaves. A reply that will
     /// not parse is the agent's formatting, not the learner's answers, so the
     /// sitting should survive one bad reply.
-    struct FlakyReviewer(std::cell::Cell<u32>);
+    struct FlakyReviewer(std::sync::atomic::AtomicU32);
 
     impl Reviewer for FlakyReviewer {
         fn name(&self) -> String {
@@ -930,8 +1044,7 @@ mod tests {
             prompts: &[crate::snippet::Prompt],
             annotations: &[Annotation],
         ) -> Result<Grade> {
-            let calls = self.0.get() + 1;
-            self.0.set(calls);
+            let calls = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
             if calls == 1 {
                 anyhow::bail!("the reviewer's JSON could not be parsed (expected value)");
             }
@@ -1257,7 +1370,7 @@ mod tests {
             out: &mut out,
             style: Style::new(false),
         };
-        let reviewer = FlakyReviewer(std::cell::Cell::new(0));
+        let reviewer = FlakyReviewer(std::sync::atomic::AtomicU32::new(0));
 
         let outcome = run(
             snippet,
@@ -1270,7 +1383,11 @@ mod tests {
         .unwrap();
 
         assert!(outcome.is_some(), "the sitting was lost");
-        assert_eq!(reviewer.0.get(), 2, "it should have asked twice");
+        assert_eq!(
+            reviewer.0.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "it should have asked twice"
+        );
         let screen = String::from_utf8_lossy(&out).to_string();
         assert!(screen.contains("did not parse"), "{screen}");
         assert!(screen.contains("saved —"), "{screen}");

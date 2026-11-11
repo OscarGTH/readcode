@@ -80,7 +80,7 @@ impl Grade {
     }
 }
 
-pub trait Reviewer {
+pub trait Reviewer: Send + Sync {
     fn name(&self) -> String;
 
     fn grade(
