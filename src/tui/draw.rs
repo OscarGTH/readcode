@@ -54,6 +54,12 @@ impl Theme {
     fn dim() -> Style {
         Style::default().fg(Color::Gray)
     }
+    /// The key that does the thing the screen is waiting for.
+    fn accent() -> Style {
+        Style::default()
+            .fg(Color::LightCyan)
+            .add_modifier(Modifier::BOLD)
+    }
     fn hint() -> Style {
         Style::default().fg(Color::DarkGray)
     }
@@ -198,7 +204,8 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
     // of sitting this is, while the title says what the code is about.
     let language = app.snippet.language.clone();
     let progress = match app.phase {
-        Phase::Review | Phase::Confirm => language,
+        Phase::Confirm => format!("ready to grade · {language}"),
+        Phase::Review => language,
         _ => format!(
             "{language} · {mode} · {}/{}",
             app.index + 1,
@@ -334,7 +341,10 @@ fn push_note(
     let mut first = true;
     for piece in wrap(&note.ask, width.saturating_sub(indent + 5)) {
         rows.push(Line::from(vec![
-            Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
+            Span::styled(
+                format!("{:>pad$} │ ", "", pad = gutter + 1),
+                Theme::gutter(),
+            ),
             Span::styled(
                 format!(
                     "{}{piece}",
@@ -352,7 +362,10 @@ fn push_note(
     let mut first = true;
     for piece in wrap(&note.answer, width.saturating_sub(indent + 5)) {
         rows.push(Line::from(vec![
-            Span::styled(format!("{:>gutter$} │ ", ""), Theme::gutter()),
+            Span::styled(
+                format!("{:>pad$} │ ", "", pad = gutter + 1),
+                Theme::gutter(),
+            ),
             Span::styled(
                 format!(
                     "{}{piece}",
@@ -479,7 +492,31 @@ fn draw_check(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let [answer, hint] = Layout::vertical([Constraint::Min(2), Constraint::Length(1)]).areas(inner);
+    let [call, answer, hint] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(2),
+        Constraint::Length(1),
+    ])
+    .areas(inner);
+
+    // The one thing the learner cannot guess: that the sitting is waiting on
+    // them, and that Ctrl-S is what sends it.
+    let answered = app.answers.iter().filter(|a| !a.trim().is_empty()).count();
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(
+                    " {answered} of {} answered — review them, then ",
+                    app.prompts.len()
+                ),
+                Theme::dim(),
+            ),
+            Span::styled("Ctrl-S", Theme::accent()),
+            Span::styled(" sends them for grading", Theme::dim()),
+        ]))
+        .wrap(Wrap { trim: true }),
+        call,
+    );
 
     let text = app
         .answers
@@ -497,8 +534,8 @@ fn draw_check(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }), answer);
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            " j/k check each answer · Enter reopens · Ctrl-S grades · Esc quits",
-            Theme::dim(),
+            " j/k moves · Enter reopens the selected answer",
+            Theme::hint(),
         ))),
         hint,
     );
@@ -842,6 +879,7 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         }
         // The check strip already carries these keys; repeating them here is the
         // kind of footnote that teaches nobody anything.
+        // The strip above already says what happens to an unanswered sitting.
         Phase::Confirm => "",
         Phase::Grading => " grading…",
         Phase::Review if app.error.is_some() => " r retries grading · Enter gives up",
@@ -1529,7 +1567,10 @@ mod tests {
         // The answer being checked is repeated where the input used to be.
         assert!(screen.contains("answer 1 of "), "{screen}");
         assert!(screen.contains("\"answer 0\""), "{screen}");
-        assert!(screen.contains("Ctrl-S grades"), "{screen}");
+        // The state says what it is waiting for, and names the key that sends it.
+        assert!(screen.contains("ready to grade"), "{screen}");
+        assert!(screen.contains("Ctrl-S"), "{screen}");
+        assert!(screen.contains("sends them for grading"), "{screen}");
     }
 
     #[test]
@@ -1567,5 +1608,38 @@ mod tests {
         let screen = screen(&app, 96, 26);
         assert!(screen.contains("12s"), "{screen}");
         assert!(screen.contains("the answers are safe"), "{screen}");
+    }
+
+    #[test]
+    fn note_rows_line_up_with_the_code_gutter() {
+        // A note is a comment on the code, so its vertical rule belongs in the
+        // same column. The code rows carry a marker column for the `>`; the note
+        // rows have to pad for it too, or every note sits one column left and the
+        // gutter looks broken.
+        let corpus = Corpus::builtin().unwrap();
+        let snippet = corpus.find("rust-005").unwrap();
+        let mut app = App::new(
+            snippet,
+            snippet.prompts(Asks::Lines),
+            Asks::Lines,
+            "check".into(),
+        );
+        for index in 0..2 {
+            for char_ in format!("note {index}").chars() {
+                app.on_key(Key::Char(char_));
+            }
+            app.on_key(Key::Enter);
+        }
+        let screen = screen(&app, 90, 26);
+        let columns: Vec<usize> = screen
+            .lines()
+            .filter(|row| row.contains('│'))
+            .map(|row| row.find('│').unwrap_or(0))
+            .collect();
+        assert!(columns.len() > 3, "{screen}");
+        assert!(
+            columns.windows(2).all(|pair| pair[0] == pair[1]),
+            "the gutter moves between rows: {columns:?}\n{screen}"
+        );
     }
 }
