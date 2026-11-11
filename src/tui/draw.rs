@@ -106,8 +106,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 
     let input_height = match app.phase {
-        Phase::Annotate | Phase::Grading => 6,
-        Phase::Confirm | Phase::Review => 1,
+        Phase::Review => 1,
+        _ => 6,
     };
     let [header, body, ask, footer] = Layout::vertical([
         Constraint::Length(1),
@@ -137,7 +137,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
             frame.render_widget(waiting, ask);
         }
         Phase::Confirm => {
-            draw_confirm(frame, app, body);
+            // Same view as answering, with the code and every note on it.
+            draw_code(frame, app, body, true);
+            draw_check(frame, app, ask);
         }
         Phase::Review => {
             draw_review(frame, app, body);
@@ -385,88 +387,52 @@ fn cursor_text(app: &App) -> Text<'static> {
     Text::from(lines)
 }
 
-/// The answers, before they cost a model call.
+/// The check: the code with every note on it, plus the answer you are looking at.
 ///
-/// Grading is one shot: the reviewer cannot be asked twice, and an answer typed in
-/// a hurry is the one you most want back. So every prompt is listed with what was
-/// written, the selected one can be reopened, and nothing is sent until Ctrl-S.
-fn draw_confirm(frame: &mut Frame, app: &App, area: Rect) {
-    let width = area.width as usize;
-    let mut rows: Vec<Line> = Vec::new();
-    rows.push(Line::from(Span::styled(
-        " Check your answers · Enter reopens one · Ctrl-S sends them to be graded",
-        Theme::title(),
-    )));
-    rows.push(Line::raw(""));
-
-    let mut selected_start = 0usize;
-    for (index, prompt) in app.prompts.iter().enumerate() {
-        let selected = index == app.confirm_index;
-        let entry_start = rows.len();
-        if selected {
-            selected_start = entry_start;
-        }
-
-        let span = if prompt.start == prompt.end {
-            format!("line {}", prompt.start)
-        } else {
-            format!("lines {}-{}", prompt.start, prompt.end)
-        };
-        // The selection is carried by the mark and by the band on the header row
-        // only: banding the answer too put green text on a light background and
-        // made the entry harder to read, not easier.
-        let mark = if selected { ">" } else { " " };
-        let head = format!("{mark} {} {span}", index + 1);
-        let concepts = format!("  {}", prompt.concepts.join("  "));
-        let mut head_spans = vec![
-            Span::styled(head.clone(), Theme::gutter()),
-            Span::styled(concepts.clone(), Theme::hint()),
-        ];
-        if selected {
-            let used = head.chars().count() + concepts.chars().count();
-            head_spans = head_spans
-                .into_iter()
-                .map(|span| {
-                    let style = span.style.patch(Theme::current_bg());
-                    Span::styled(span.content, style)
-                })
-                .collect();
-            // Pad past the pane's width, or the band stops at the last glyph and
-            // reads as a ragged highlight. The paragraph clips the excess.
-            head_spans.push(Span::styled(
-                " ".repeat(width.saturating_sub(used) + 8),
-                Theme::current_bg(),
-            ));
-        }
-        rows.push(Line::from(head_spans));
-
-        let answer = app.answers.get(index).map(String::as_str).unwrap_or("");
-        if answer.trim().is_empty() {
-            rows.push(Line::from(vec![
-                Span::styled("    ".to_string(), Theme::gutter()),
-                Span::styled("— not answered —".to_string(), Theme::dim()),
-            ]));
-        } else {
-            for piece in wrap(answer, width.saturating_sub(6)) {
-                rows.push(Line::from(vec![
-                    Span::styled("    ".to_string(), Theme::gutter()),
-                    Span::styled(piece, Theme::note()),
-                ]));
-            }
-        }
-        rows.push(Line::raw(""));
-    }
-
-    // Keep the selected entry on screen when the list is longer than the pane.
-    let height = area.height as usize;
-    let scroll = if selected_start + 4 >= height {
-        (selected_start + 4).saturating_sub(height)
-    } else {
-        0
+/// A separate list screen meant leaving the code to re-read what you wrote, which
+/// is backwards — the notes sitting above their lines *are* the answers, and the
+/// thing worth checking is whether each note says the right thing about the code
+/// it sits on.
+fn draw_check(frame: &mut Frame, app: &App, area: Rect) {
+    let Some(prompt) = app.current() else {
+        return;
     };
+    let total = app.prompts.len();
+    let title = format!(
+        " answer {} of {total} · {} · {} ",
+        app.confirm_index + 1,
+        prompt.span_label(),
+        prompt.concepts.join("  ")
+    );
+    let block = Block::default()
+        .borders(Borders::TOP)
+        .border_style(Theme::hint())
+        .title(Span::styled(title, Theme::hint()));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let [answer, hint] = Layout::vertical([Constraint::Min(2), Constraint::Length(1)]).areas(inner);
+
+    let text = app
+        .answers
+        .get(app.confirm_index)
+        .map(String::as_str)
+        .unwrap_or("");
+    let body = if text.trim().is_empty() {
+        Line::from(Span::styled(
+            " — not answered; Enter opens it —",
+            Theme::dim(),
+        ))
+    } else {
+        Line::from(Span::styled(format!(" \"{text}\""), Theme::note()))
+    };
+    frame.render_widget(Paragraph::new(body).wrap(Wrap { trim: false }), answer);
     frame.render_widget(
-        Paragraph::new(Text::from(rows)).scroll((scroll as u16, 0)),
-        area,
+        Paragraph::new(Line::from(Span::styled(
+            " j/k check each answer · Enter reopens · Ctrl-S grades · Esc quits",
+            Theme::dim(),
+        ))),
+        hint,
     );
 }
 
@@ -805,7 +771,9 @@ fn draw_footer(frame: &mut Frame, app: &App, area: Rect) {
         Phase::Annotate => {
             " Enter next · Ctrl-J newline · Ctrl-B back · Enter on empty skips · Esc quits"
         }
-        Phase::Confirm => " j/k choose · Enter reopens · Ctrl-S grades · Esc quits",
+        // The check strip already carries these keys; repeating them here is the
+        // kind of footnote that teaches nobody anything.
+        Phase::Confirm => "",
         Phase::Grading => " grading…",
         Phase::Review if app.error.is_some() => " r retries grading · Enter gives up",
         Phase::Review => " j/k scroll · Enter finishes · Esc discards",
@@ -1430,7 +1398,7 @@ mod tests {
     }
 
     #[test]
-    fn the_confirmation_lists_every_answer_before_grading() {
+    fn the_confirmation_shows_the_code_and_the_answer_being_checked() {
         let corpus = Corpus::builtin().unwrap();
         let snippet = corpus.find("rust-006").unwrap();
         let mut app = App::new(
@@ -1440,7 +1408,7 @@ mod tests {
             "check".into(),
         );
         for index in 0..app.prompts.len() {
-            for char_ in format!("answer number {index}").chars() {
+            for char_ in format!("answer {index}").chars() {
                 app.on_key(Key::Char(char_));
             }
             app.on_key(Key::Enter);
@@ -1448,19 +1416,14 @@ mod tests {
         assert_eq!(app.phase, Phase::Confirm);
 
         let screen = screen(&app, 96, 26);
-        for index in 0..app.prompts.len() {
-            assert!(
-                screen.contains(&format!("answer number {index}")),
-                "answer {index} is missing from the check:\n{screen}"
-            );
-        }
-        assert!(screen.contains("Ctrl-S"), "{screen}");
-        // The first entry is selected, and the selection is visible as a band.
-        assert!(
-            screen
-                .lines()
-                .any(|row| row.trim_start().starts_with("> 1")),
-            "{screen}"
-        );
+        // The code is still there, with the notes written on it: those notes are
+        // the answers, so checking them means seeing the code too.
+        assert!(screen.contains("fn main() {"), "{screen}");
+        // The first answer, written into the code as a note over its span.
+        assert!(screen.contains("on lines 1-3: answer 0"), "{screen}");
+        // The answer being checked is repeated where the input used to be.
+        assert!(screen.contains("answer 1 of "), "{screen}");
+        assert!(screen.contains("\"answer 0\""), "{screen}");
+        assert!(screen.contains("Ctrl-S grades"), "{screen}");
     }
 }

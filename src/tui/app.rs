@@ -84,7 +84,12 @@ impl<'a> App<'a> {
     }
 
     pub fn current(&self) -> Option<&Prompt> {
-        self.prompts.get(self.index)
+        match self.phase {
+            // Checking answers happens on the code, not on a separate list: the
+            // notes are the answers, so the code has to stay in view.
+            Phase::Confirm => self.prompts.get(self.confirm_index),
+            _ => self.prompts.get(self.index),
+        }
     }
 
     pub fn input_text(&self) -> String {
