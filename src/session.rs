@@ -38,6 +38,16 @@ pub struct Outcome {
 /// The snippet that most wants to be seen: overdue and weak concepts first,
 /// snippets never seen get a nudge, and the last snippet is skipped when there
 /// is anywhere else to go.
+/// The language in play. Before one is chosen, that is the corpus's main
+/// language — the one with the most material — rather than "all of them at
+/// once", which would mix two ladders into one menu.
+pub fn current_language(corpus: &Corpus, progress: &Progress) -> Option<String> {
+    progress
+        .active_language()
+        .map(str::to_string)
+        .or_else(|| corpus.languages().first().cloned())
+}
+
 pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a Snippet> {
     if corpus.is_empty() {
         return None;
@@ -45,19 +55,22 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
 
     // One language at a time: a sitting in Go must not be decided by what you
     // have read in Rust.
-    let language = progress.active_language();
+    let language = current_language(corpus, progress);
     let in_language: Vec<&Snippet> = corpus
         .snippets()
         .iter()
-        .filter(|snippet| language.is_none_or(|language| snippet.language == language))
+        .filter(|snippet| {
+            language
+                .as_deref()
+                .is_none_or(|language| snippet.language == language)
+        })
         .collect();
     if in_language.is_empty() {
         return None;
     }
-    let level = match language {
-        Some(language) => progress.level_of(language),
-        None => progress.level,
-    };
+    let level = language
+        .as_deref()
+        .and_then(|language| progress.level_of(language));
 
     // A declared level limits the menu to what the learner can actually read,
     // plus one rung of stretch. No declared level means no filter.
@@ -164,19 +177,17 @@ pub fn pick<'a>(corpus: &'a Corpus, progress: &Progress, now: u64) -> Option<&'a
 /// A nudge upwards once everything at the learner's level is solid. The level is
 /// theirs to set; this only says when the current rung has stopped teaching.
 pub fn progress_view<'a>(corpus: &Corpus, progress: &Progress, now: u64) -> ui::ProgressView<'a> {
-    let active = progress.language.clone();
+    // Before a language is chosen, the corpus's main one is what will be offered,
+    // so that is what the numbers should describe — not two ladders added together.
+    let active = current_language(corpus, progress);
     let in_language = |snippet: &crate::snippet::Snippet| match active.as_deref() {
         Some(language) => snippet.language == language,
         None => true,
     };
-    let language_name = match &active {
-        Some(language) => language.clone(),
-        None => corpus.languages().first().cloned().unwrap_or_default(),
-    };
-    let level = match &active {
-        Some(language) => progress.level_of(language),
-        None => progress.level,
-    };
+    let language_name = active.clone().unwrap_or_default();
+    let level = active
+        .as_deref()
+        .and_then(|language| progress.level_of(language));
 
     // Everything below counts only this language: reading Go must not move the
     // numbers for Rust.
@@ -305,11 +316,9 @@ pub fn progress_view<'a>(corpus: &Corpus, progress: &Progress, now: u64) -> ui::
 }
 
 pub fn level_advice(corpus: &Corpus, progress: &Progress) -> Option<String> {
-    let language = progress.active_language();
-    let level = match language {
-        Some(language) => progress.level_of(language)?,
-        None => progress.level?,
-    };
+    let language = current_language(corpus, progress);
+    let level = progress.level_of(language.as_deref()?)?;
+    let language = language.as_deref();
     if level >= MAX_LEVEL {
         return None;
     }
@@ -1074,10 +1083,12 @@ mod tests {
             level: Some(1),
             ..Progress::default()
         };
+        // One language's worth: `pick` never leaves the language you are in, so a
+        // Go snippet in this list would never be offered back.
         let level_one: Vec<_> = corpus
             .snippets()
             .iter()
-            .filter(|snippet| snippet.levels().from <= 1)
+            .filter(|snippet| snippet.language == "rust" && snippet.levels().from <= 1)
             .cloned()
             .collect();
         for snippet in &level_one {

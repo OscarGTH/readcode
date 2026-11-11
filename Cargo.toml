@@ -1,6 +1,6 @@
 [package]
 name = "readcode"
-version = "0.11.0"
+version = "0.11.1"
 edition = "2024"
 rust-version = "1.85"
 description = "Learn a programming language by annotating real code, then get graded on it."

@@ -193,6 +193,21 @@ fn main() -> Result<()> {
     let mut progress = Progress::load(&progress_path)?;
     let now = srs::now();
 
+    // `--language` is a flag for the whole program, not just for a sitting:
+    // `status`, `level` and `pick` all have to agree about which language they
+    // are talking about. It applies to this run only — `readcode lang <name>`
+    // is what remembers the choice.
+    if let Some(language) = &cli.language {
+        let languages = corpus.languages();
+        if !languages.contains(language) {
+            bail!(
+                "the corpus has no `{language}` — it has: {}",
+                languages.join(", ")
+            );
+        }
+        progress.language = Some(language.clone());
+    }
+
     match cli.command.clone().unwrap_or(Command::Next) {
         Command::Next => {
             let mut input = io::stdin().lock();
@@ -201,16 +216,7 @@ fn main() -> Result<()> {
             // Language first — it decides which snippets and which level apply —
             // then that language's level.
             let languages = corpus.languages();
-            if let Some(language) = &cli.language {
-                if !languages.contains(language) {
-                    bail!(
-                        "the corpus has no `{language}` — it has: {}",
-                        languages.join(", ")
-                    );
-                }
-                progress.language = Some(language.clone());
-                progress.save(&progress_path)?;
-            } else if progress.language.is_none() {
+            if progress.language.is_none() {
                 if languages.len() > 1 && cli.snippet.is_none() {
                     let mut term = session::Terminal {
                         input: &mut input,
@@ -222,6 +228,11 @@ fn main() -> Result<()> {
                 } else if let Some(only) = languages.first() {
                     progress.language = Some(only.clone());
                 }
+                progress.save(&progress_path)?;
+            } else if cli.language.is_some() {
+                // Chosen with the flag for a sitting: remember it. A run in a
+                // language is a commitment in a way that `--language` on
+                // `status` is not.
                 progress.save(&progress_path)?;
             }
 
