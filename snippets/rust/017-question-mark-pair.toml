@@ -1,0 +1,29 @@
+id = "rust-017"
+language = "rust"
+title = "Two `?`s and an `Ok`"
+level = 3
+intro = "Splitting a line into host and port, with two ways to fail."
+code = '''
+fn split_port(line: &str) -> Result<(String, u16), Box<dyn std::error::Error>> {
+    let (host, port) = line.split_once(':').ok_or("no colon")?;
+    Ok((host.to_string(), port.trim().parse()?))
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What does `Box<dyn Error>` let this function return?"
+concepts = ["rust.error.dynamic"]
+notes = { "rust.error.dynamic" = "It erases the concrete error type: a `&str` message from `ok_or` and a `ParseIntError` from `parse` both fit behind the same `Box`." }
+
+[[blocks]]
+lines = [2, 2]
+ask = "What does `?` do when the line has no colon?"
+concepts = ["rust.question_mark", "rust.borrow.str_param"]
+notes = { "rust.question_mark" = "`ok_or` turns the `Option` into a `Result`, and `?` returns that `Err` from the function immediately — the rest of the line never runs.", "rust.borrow.str_param" = "`line` is borrowed, so the split pieces are slices of the caller's text; `to_string` on the next line is what makes the host owned." }
+
+[[blocks]]
+lines = [3, 4]
+ask = "Two `?`s and an `Ok`. Which one finishes the function?"
+concepts = ["rust.question_mark", "rust.result.ok"]
+notes = { "rust.question_mark" = "The inner `?` sits inside the tuple expression, so a failed parse returns before `Ok` is ever built.", "rust.result.ok" = "`Ok((..))` is the success path: the pair of host and port, wrapped so the return type is satisfied." }

@@ -94,6 +94,38 @@ const EMBEDDED: &[(&str, &str)] = &[
         "go/006-port.toml",
         include_str!("../snippets/go/006-port.toml"),
     ),
+    (
+        "rust/016-borrow-into-new.toml",
+        include_str!("../snippets/rust/016-borrow-into-new.toml"),
+    ),
+    (
+        "rust/017-question-mark-pair.toml",
+        include_str!("../snippets/rust/017-question-mark-pair.toml"),
+    ),
+    (
+        "rust/018-filter-map-fold.toml",
+        include_str!("../snippets/rust/018-filter-map-fold.toml"),
+    ),
+    (
+        "rust/019-basket-methods.toml",
+        include_str!("../snippets/rust/019-basket-methods.toml"),
+    ),
+    (
+        "rust/020-option-greeting.toml",
+        include_str!("../snippets/rust/020-option-greeting.toml"),
+    ),
+    (
+        "rust/021-tally-entry.toml",
+        include_str!("../snippets/rust/021-tally-entry.toml"),
+    ),
+    (
+        "go/007-split-port.toml",
+        include_str!("../snippets/go/007-split-port.toml"),
+    ),
+    (
+        "go/008-compact-in-place.toml",
+        include_str!("../snippets/go/008-compact-in-place.toml"),
+    ),
 ];
 
 #[derive(Debug, Default)]

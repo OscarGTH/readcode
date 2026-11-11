@@ -1,0 +1,38 @@
+id = "rust-019"
+language = "rust"
+title = "Two methods, two kinds of self"
+level = 2
+intro = "One method writes, one only reads, and the receiver says which."
+code = '''
+struct Basket {
+    total: u32,
+}
+
+impl Basket {
+    fn add(&mut self, price: u32) {
+        self.total += price;
+    }
+
+    fn total(&self) -> u32 {
+        self.total
+    }
+}
+'''
+
+[[blocks]]
+lines = [1, 4]
+ask = "The total is a `u32`. What does that rule out?"
+concepts = ["rust.type.u32"]
+notes = { "rust.type.u32" = "Unsigned and 32 bits wide: no negative prices and no fractional ones, and the field is exactly those four bytes." }
+
+[[blocks]]
+lines = [5, 8]
+ask = "Why does `add` take `&mut self`?"
+concepts = ["rust.impl", "rust.mut_self"]
+notes = { "rust.impl" = "`impl Basket` is where methods live; the struct only holds data.", "rust.mut_self" = "It writes to `self.total`, so it needs exclusive access, and the caller's binding must be `mut`." }
+
+[[blocks]]
+lines = [9, 13]
+ask = "Why can `total` take `&self` instead?"
+concepts = ["rust.ref_self", "rust.return.value"]
+notes = { "rust.ref_self" = "It only reads, so a shared borrow is enough: several `total()` calls can be in flight at once, and no `mut` is needed.", "rust.return.value" = "`self.total` is the tail expression, so it is returned; no `return` keyword and no semicolon." }

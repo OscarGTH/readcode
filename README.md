@@ -100,8 +100,11 @@ readcode --language go  # or for one run only
 seen counts — at the bottom, so the second language is discoverable rather than something
 you have to remember. `readcode --snippet` still reaches anything in either language.
 
-The shipped corpus is fifteen Rust snippets and six Go ones, levels 1 to 3 for Go and 1 to
-4 for Rust; `readcode list` shows both, with the language in its own column.
+The shipped corpus is twenty-one Rust snippets and eight Go ones, levels 1 to 3 for Go and 1
+to 4 for Rust; `readcode list` shows both, with the language in its own column. Most ideas are
+taught by more than one snippet on purpose — `rust.return.value` appears in eight, the borrow
+of a `&str` in seven — so a concept you meet again comes back in different code rather than as
+the same file with the same question.
 
 ![A Go sitting's review: `func` and `string` coloured as Go keywords, and Go Tour links under each prompt](docs/go.png)
 
@@ -496,6 +499,10 @@ count lines by hand to find the off-by-one.
 
 ### Tips for snippets worth studying
 
+- **Teach one idea in more than one place.** A concept you keep meeting should not always be
+  the same snippet: the scheduler revisits whatever is weakest, and being handed the same file
+  a third time teaches the file, not the rule. Two or three snippets per important concept,
+  with different code, is what makes repetition useful.
 - **Ask about the language, not about programming.** "What does `%` do" and "what is a
   `while` loop" teach nothing about Rust or Go; "why may this borrow end before the next
   line", "what does `&mut self` force on the caller", "where does this key's zero value come

@@ -1,0 +1,28 @@
+id = "rust-016"
+language = "rust"
+title = "Borrowing into a new String"
+level = 2
+intro = "A function that reads a borrowed string and returns a new owned one."
+code = '''
+fn shout(text: &str) -> String {
+    format!("{}!", text.to_uppercase())
+}
+
+fn main() {
+    let name = String::from("ferris");
+    let loud = shout(&name);
+    println!("{loud} from {name}");
+}
+'''
+
+[[blocks]]
+lines = [1, 3]
+ask = "What does `shout` borrow, and what does it return?"
+concepts = ["rust.borrow.str_param", "rust.heap.string"]
+notes = { "rust.borrow.str_param" = "`&str` is a borrow, so `shout` reads the caller's text and never owns it — `&name` is a `&String` that coerces to `&str` at the call.", "rust.heap.string" = "`to_uppercase` allocates a new `String` on the heap, and `format!` builds another; the return value owns that new buffer." }
+
+[[blocks]]
+lines = [4, 9]
+ask = "Why does `name` still work after the call?"
+concepts = ["rust.borrow.str_param", "rust.format.capture"]
+notes = { "rust.borrow.str_param" = "Nothing was moved: `&name` handed over a borrow, and the borrow ended when `shout` returned, so `name` is still the owner.", "rust.format.capture" = "`{loud}` and `{name}` are captured by name from the surrounding scope; no arguments are passed." }

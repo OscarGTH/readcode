@@ -1,0 +1,36 @@
+id = "go-007"
+language = "go"
+title = "Two ways to fail, three things to return"
+level = 3
+intro = "Splitting a line into host and port, with an error for each thing that can go wrong."
+code = '''
+func splitPort(s string) (string, int, error) {
+	host, portText, ok := strings.Cut(s, ":")
+	if !ok {
+		return "", 0, fmt.Errorf("no colon in %q", s)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return "", 0, fmt.Errorf("bad port: %w", err)
+	}
+	return host, port, nil
+}
+'''
+
+[[blocks]]
+lines = [1, 3]
+ask = "What are the three results, and what does `ok` mean?"
+concepts = ["go.multi.return"]
+notes = { "go.multi.return" = "`strings.Cut` returns the two pieces plus a bool: `ok` says whether the separator was there at all, which is a different question from whether the port parses." }
+
+[[blocks]]
+lines = [4, 7]
+ask = "Two errors here. What does each one wrap?"
+concepts = ["go.error.wrap", "go.err.check"]
+notes = { "go.error.wrap" = "`%q` quotes the input in the first message; `%w` in the second keeps the original `strconv` error inside so `errors.Is` can still find it.", "go.err.check" = "Go reports failure as a value, so each call is followed by an `err`/`ok` test rather than a `try` block." }
+
+[[blocks]]
+lines = [8, 11]
+ask = "Why `nil` at the end?"
+concepts = ["go.nil.error"]
+notes = { "go.nil.error" = "A nil error is the success value; every earlier return supplies a non-nil one, so the caller only checks `err != nil`." }

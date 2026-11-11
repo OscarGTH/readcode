@@ -1,0 +1,31 @@
+id = "rust-018"
+language = "rust"
+title = "Parsing what you can, folding the rest"
+level = 3
+intro = "A chain that skips the text it cannot parse and adds up what it can."
+code = '''
+fn total(input: &[&str]) -> i64 {
+    input
+        .iter()
+        .filter_map(|text| text.parse::<i64>().ok())
+        .fold(0, |sum, value| sum + value)
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What does this function take, and what does it return?"
+concepts = ["rust.slice"]
+notes = { "rust.slice" = "A borrowed slice of borrowed strings: nothing is owned or copied, and the returned `i64` is a new value." }
+
+[[blocks]]
+lines = [2, 5]
+ask = "What does `filter_map` drop, and what does its closure return?"
+concepts = ["rust.iterator.adaptor", "rust.closure", "rust.parse"]
+notes = { "rust.iterator.adaptor" = "`filter_map` keeps only the elements where the closure produced `Some`, and nothing runs until a consumer asks.", "rust.closure" = "The closure takes one borrowed string and returns `Option<i64>`, which is what makes skipping free.", "rust.parse" = "`parse::<i64>()` returns a `Result`; `.ok()` throws the error away and keeps the number, which is how unparseable text disappears." }
+
+[[blocks]]
+lines = [6, 6]
+ask = "What ends the chain, and what does the closure do each time?"
+concepts = ["rust.closure", "rust.iterator.adaptor"]
+notes = { "rust.closure" = "`|sum, value| sum + value` carries the running total forward; each call gets the total so far and the next value.", "rust.iterator.adaptor" = "`fold` is the consumer that finally drives the chain, starting from `0`, which is why nothing ran before this line." }

@@ -14,6 +14,9 @@ Rules:
 - Mark a concept "correct" only if the annotation actually says it — in its own words, with the right meaning. Restating the code is not explaining it.
 - "partial" means the idea is there but incomplete or imprecise. "wrong" means the annotation says something false or explains a different thing. "unknown" means the learner said they do not know, or left it blank.
 - A short, accurate answer for a single line is complete. Do not ask for more detail than the line needs.
+- Do not grade like a pedant, and never ask the learner to unpack a word they already used correctly. "u32" MEANS unsigned 32-bit, and `unsigned` already means it cannot be negative — so "an unsigned 32-bit integer" is a complete answer and must be "correct", not "partial" for failing to add "so it cannot be negative". The same goes for "&str borrows", "String owns its buffer", "a slice points at a backing array", "`?` propagates the error": naming the thing correctly is the answer.
+- "partial" is for an answer that would mislead: a part of what the prompt asked is genuinely absent, or the answer is right about one thing and vague or wrong about another. It is NOT for "less detail than the rubric contains" when what is there is accurate.
+- Keep `missing` short and rare, and only for points the prompt actually asked for. Never list a restatement of a concept's definition, and never list a property already implied by a word the learner used. The full mechanism belongs in `teach`, which you write anyway.
 - Grade only the concepts the annotation actually addresses. If a prompt lists several concepts but the answer speaks to one of them, return an entry for that one and OMIT the others — an omitted concept means "not asked of this prompt", not "wrong". Use "unknown" only when the learner says they do not know, or leaves the answer blank.
 - Keep feedback to one or two sentences per prompt. Name the misconception, not the syntax.
 - TEACH, ALWAYS. `feedback` judges what the learner wrote; `teach` is the explanation they walk away with. Include `teach` for every prompt, correct ones included: a right answer can be a guess, and the learner needs the full mechanism either way. On a wrong or unknown answer it is the correction; on a correct one it is the whole truth behind the line, including anything the answer left unsaid. Two or three sentences, as a colleague would say it across a desk: name the mechanism, not the syntax.
@@ -73,7 +76,7 @@ pub fn task(snippet: &Snippet, prompts: &[Prompt], annotations: &[Annotation]) -
     }
 
     out.push_str(
-        "\nGrade every prompt above. Be strict about meaning and generous about wording: a correct idea in clumsy words is \"correct\", and a line that is fully explained in one clause is not incomplete. Include `teach` on every prompt — on a wrong one it is the correction, on a correct one it is the full mechanism, because a right answer may have been a guess.",
+        "\nGrade every prompt above. Be strict about meaning and generous about wording: a correct idea in clumsy words is \"correct\", and a line that is fully explained in one clause is not incomplete. Naming a thing correctly — \"unsigned 32-bit\", \"borrows\", \"owns its buffer\" — is the answer; do not mark it partial for leaving out what that word already means. Include `teach` on every prompt — on a wrong one it is the correction, on a correct one it is the full mechanism, because a right answer may have been a guess.",
     );
     out
 }

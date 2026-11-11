@@ -1,0 +1,14 @@
+id = "credits-a-named-type"
+description = "Naming a type correctly is the answer: `u32` already means unsigned, so an answer that says \"unsigned 32-bit integer\" is complete, not partial for leaving out \"cannot be negative\"."
+snippet = "rust-009"
+mode = "blocks"
+tags = ["quality", "model-expected"]
+
+[[annotations]]
+prompt = 1
+text = "it is an unsigned 32 bit integer"
+
+[[expect]]
+prompt = 1
+concept = "rust.type.u32"
+verdict = "correct"

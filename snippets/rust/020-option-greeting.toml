@@ -1,0 +1,25 @@
+id = "rust-020"
+language = "rust"
+title = "A greeting that may have a name"
+level = 2
+intro = "An optional name, two arms, and one `String` either way."
+code = '''
+fn greeting(name: Option<&str>) -> String {
+    match name {
+        Some(name) => format!("hi {name}"),
+        None => "hi there".to_string(),
+    }
+}
+'''
+
+[[blocks]]
+lines = [1, 1]
+ask = "What can be missing here?"
+concepts = ["rust.option.type"]
+notes = { "rust.option.type" = "`Option<&str>` is either a borrowed name or nothing at all; the type says the caller may pass `None`, and the function cannot forget to handle it." }
+
+[[blocks]]
+lines = [2, 6]
+ask = "What does each arm produce, and why must they agree?"
+concepts = ["rust.option.match", "rust.match.arm", "rust.format.capture"]
+notes = { "rust.option.match" = "`match` on an `Option` forces both cases: there is no null to check, so the missing case is written out.", "rust.match.arm" = "Each arm binds what it needs — `Some(name)` binds the `&str`, `None` binds nothing — and both arms must yield a `String`.", "rust.format.capture" = "`{name}` is captured from the arm's pattern, not passed as an argument." }

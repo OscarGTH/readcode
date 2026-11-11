@@ -1,0 +1,34 @@
+id = "go-008"
+language = "go"
+title = "Compacting a slice without copying it"
+level = 2
+intro = "A filter that writes back into the same backing array."
+code = '''
+func compact(values []string) []string {
+	kept := values[:0]
+	for _, value := range values {
+		if value != "" {
+			kept = append(kept, value)
+		}
+	}
+	return kept
+}
+'''
+
+[[blocks]]
+lines = [1, 2]
+ask = "What is `values[:0]`?"
+concepts = ["go.slice.header"]
+notes = { "go.slice.header" = "It is a zero-length slice over the same backing array, so appending into it overwrites what the caller passed in — no allocation, and no copy of the strings." }
+
+[[blocks]]
+lines = [3, 5]
+ask = "What does `range` give here, and why is the index thrown away?"
+concepts = ["go.range", "go.blank"]
+notes = { "go.range" = "`range` yields the index and a copy of each string; the copy is what makes the read safe while the slice is being overwritten.", "go.blank" = "The index is not needed, and Go will not compile an unused variable, so it goes to `_`." }
+
+[[blocks]]
+lines = [6, 9]
+ask = "Why assign `append` back, when the array is the same?"
+concepts = ["go.append", "go.slice.header"]
+notes = { "go.append" = "`append` returns a slice value — length and capacity included — so the result has to be assigned even when the pointer did not move.", "go.slice.header" = "The returned slice may share the caller's array, so the caller's tail is now stale: `compact` changes what was passed in." }

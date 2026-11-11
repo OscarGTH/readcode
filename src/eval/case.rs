@@ -248,6 +248,10 @@ const EMBEDDED: &[(&str, &str)] = &[
         include_str!("../../evals/cases/go-error-handling.toml"),
     ),
     (
+        "credits-a-named-type.toml",
+        include_str!("../../evals/cases/credits-a-named-type.toml"),
+    ),
+    (
         "teaches-when-the-answer-is-unknown.toml",
         include_str!("../../evals/cases/teaches-when-the-answer-is-unknown.toml"),
     ),
@@ -363,7 +367,7 @@ verdict = "unknown"
         let cases = super::load_embedded().unwrap();
         assert_eq!(
             cases.len(),
-            8,
+            9,
             "{:?}",
             cases.iter().map(|c| &c.id).collect::<Vec<_>>()
         );

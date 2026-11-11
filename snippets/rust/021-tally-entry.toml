@@ -1,0 +1,46 @@
+id = "rust-021"
+language = "rust"
+title = "Tallying votes with the entry API"
+level = 3
+intro = "The same word-count shape over borrowed strings, written compactly."
+code = '''
+use std::collections::HashMap;
+
+fn tally(votes: &[&str]) -> HashMap<&str, usize> {
+    let mut counts = HashMap::new();
+    for vote in votes {
+        *counts.entry(*vote).or_insert(0) += 1;
+    }
+    counts
+}
+'''
+
+[[blocks]]
+lines = [1, 2]
+ask = "Why does `HashMap` need a `use` here, but `String` and `Vec` do not?"
+concepts = ["rust.use.prelude"]
+notes = { "rust.use.prelude" = "`String` and `Vec` arrive with the prelude, the small set of names every file gets; `HashMap` does not, so it is imported." }
+
+[[blocks]]
+lines = [3, 3]
+ask = "Where do the returned keys live?"
+concepts = ["rust.lifetime.elision"]
+notes = { "rust.lifetime.elision" = "The keys are `&str` slices of `votes`, so the returned map cannot outlive the input. One input lifetime means it can be elided." }
+
+[[blocks]]
+lines = [4, 5]
+ask = "Why must `counts` be mutable, and what does the loop walk over?"
+concepts = ["rust.binding.mut", "rust.iterator.for"]
+notes = { "rust.binding.mut" = "The loop writes into the map, and an immutable binding would not compile.", "rust.iterator.for" = "`for vote in votes` walks a borrowed slice, so `vote` is `&&str` — hence the `*` on the next line." }
+
+[[blocks]]
+lines = [6, 6]
+ask = "What do the `*`, `entry` and `or_insert` do here?"
+concepts = ["rust.hashmap.entry", "rust.deref.assign"]
+notes = { "rust.hashmap.entry" = "`entry` looks the key up once and hands back a slot; `or_insert(0)` fills it with 0 when the key is new.", "rust.deref.assign" = "The slot is a `&mut usize`, and `*` reaches the count behind it so `+= 1` writes the number." }
+
+[[blocks]]
+lines = [7, 9]
+ask = "What does this line return? Why is there no `return`?"
+concepts = ["rust.return.value"]
+notes = { "rust.return.value" = "`counts` is the tail expression, so the map is moved out as the return value; a semicolon would make the function return `()`." }
