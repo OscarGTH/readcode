@@ -794,6 +794,12 @@ let b = 2;
 lines = [1, 2]
 ask = "the bindings"
 concepts = ["rust.binding"]
+  [[blocks.line]]
+  at = 1
+  concepts = ["rust.binding"]
+  [[blocks.line]]
+  at = 2
+  concepts = ["rust.binding"]
 "#,
         )
         .unwrap();

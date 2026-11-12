@@ -1263,7 +1263,7 @@ mod tests {
             for x in 0..buffer.area.width {
                 row.push_str(buffer[(x, y)].symbol());
             }
-            if row.contains("│ fn main()") || row.contains("│     let") {
+            if row.contains("│ fn main()") || row.contains("│     let total") {
                 code_rows.push(y);
             }
         }

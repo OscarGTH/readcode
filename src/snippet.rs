@@ -278,11 +278,23 @@ impl Snippet {
                     Asks::Blocks
                 }
             }
+            // Line mode needs someone to have said what each line teaches. Without
+            // that, asking every line and grading it against the whole block is how
+            // a correct answer about an `if` gets marked wrong for not mentioning
+            // `append` — so this falls back to the block, and says so.
+            Asks::Lines if !self.has_line_prompts() => Asks::Blocks,
             explicit => explicit,
         }
     }
 
     /// The prompts for one sitting, in code order.
+    /// The line prompts, whatever `resolve_mode` would say — for tests that check
+    /// what an un-authored line is graded against.
+    #[cfg(test)]
+    pub fn line_prompts_for_test(&self) -> Vec<Prompt> {
+        self.line_prompts()
+    }
+
     pub fn prompts(&self, asks: Asks) -> Vec<Prompt> {
         match self.resolve_mode(asks) {
             Asks::Lines => self.line_prompts(),
@@ -323,10 +335,20 @@ impl Snippet {
                 if authored.is_none() && !self.is_annotatable(line) {
                     continue;
                 }
+                // Inherit the block's concepts only when the block *is* this line.
+                // In a three-line block the idea may live on a different line, and
+                // grading an answer about the `if` against `append` is the tool
+                // being unfair rather than the learner being wrong. An un-authored
+                // line is asked as a reading check, and grades no concept.
+                let inherited = if start == end {
+                    block.concepts.clone()
+                } else {
+                    Vec::new()
+                };
                 let concepts = authored
                     .map(|prompt| prompt.concepts.clone())
                     .filter(|concepts| !concepts.is_empty())
-                    .unwrap_or_else(|| block.concepts.clone());
+                    .unwrap_or(inherited);
                 let notes = match authored {
                     Some(prompt) if !prompt.notes.is_empty() => prompt.notes.clone(),
                     _ => block
@@ -768,7 +790,7 @@ notes = { "rust.operator.compound" = "`+=` reads, adds and writes back." }
     }
 
     #[test]
-    fn auto_prefers_lines_only_when_the_corpus_authored_them() {
+    fn line_mode_needs_authored_lines_and_falls_back_to_blocks() {
         assert_eq!(
             Snippet::parse(OK).unwrap().resolve_mode(Asks::Auto),
             Asks::Blocks
@@ -777,9 +799,11 @@ notes = { "rust.operator.compound" = "`+=` reads, adds and writes back." }
             Snippet::parse(WITH_LINES).unwrap().resolve_mode(Asks::Auto),
             Asks::Lines
         );
+        // Asked for lines, but nobody said what each line teaches: asking anyway
+        // would grade a line against the whole block.
         assert_eq!(
             Snippet::parse(OK).unwrap().resolve_mode(Asks::Lines),
-            Asks::Lines
+            Asks::Blocks
         );
     }
 
@@ -868,5 +892,45 @@ notes = { "rust.operator.compound" = "`+=` reads, adds and writes back." }
     fn numbered_code_lines_up_with_the_ranges() {
         let snippet = Snippet::parse(OK).unwrap();
         assert_eq!(snippet.numbered_code(), " 1 | let a = 1;\n 2 | let b = 2;");
+    }
+
+    #[test]
+    fn a_line_inside_a_block_does_not_borrow_its_concepts() {
+        // The reported unfairness: asked about the `if` on line 4, graded against
+        // the `append` on line 5, because line 4 sat inside the block that teaches
+        // appending. Only one-line blocks lend their concepts to their line.
+        let corpus = crate::corpus::Corpus::builtin().unwrap();
+        let snippet = corpus.find("go-003").unwrap();
+        let prompts = snippet.line_prompts_for_test();
+        let line_four = prompts
+            .iter()
+            .find(|prompt| prompt.start == 4 && prompt.end == 4)
+            .unwrap_or_else(|| panic!("no prompt for line 4: {prompts:?}"));
+        assert!(
+            line_four.concepts.is_empty(),
+            "line 4 should grade no concept, got {:?}",
+            line_four.concepts
+        );
+        assert!(line_four.ask.contains("line 4"), "{}", line_four.ask);
+
+        // A one-line block is the exception: there, the concepts are the line.
+        let ok = Snippet::parse(
+            r#"
+id = "t-line"
+language = "rust"
+title = "one line"
+code = '''
+let a = 1;
+'''
+
+[[blocks]]
+lines = [1, 1]
+concepts = ["rust.binding"]
+"#,
+        )
+        .unwrap();
+        let prompts = ok.line_prompts_for_test();
+        assert_eq!(prompts.len(), 1);
+        assert_eq!(prompts[0].concepts, vec!["rust.binding".to_string()]);
     }
 }
