@@ -3,17 +3,16 @@
 Learn a language by annotating real code, then get graded on it.
 
 `readcode` shows you a short piece of production-shaped code — sometimes block by block,
-sometimes line by line — and asks you to explain each part in your own words. A reviewer
-then marks every concept you were supposed to name: correct, partial, wrong, or unknown.
-Concepts you missed come back sooner. Duolingo, aimed at *reading* code instead of
-writing toy apps nobody needs.
+sometimes line by line — and asks you to explain each part in your own words. A reviewer marks
+every concept you were supposed to name: correct, partial, wrong, or unknown. Concepts you
+missed come back sooner. Duolingo, aimed at *reading* code instead of writing toy apps nobody
+needs.
 
-![A readcode sitting: a short Rust function with four notes written above their lines, the fifth question underneath, and the answer being typed](docs/tui.png)
+![A readcode sitting: notes written above the lines they explain, and the next question under the code](docs/tui.png)
 
 ## Install
 
-macOS or Linux, via Homebrew. It builds from source, so it takes about a minute and
-pulls in nothing you keep afterwards:
+macOS or Linux, via Homebrew. It builds from source, so it takes about a minute:
 
 ```sh
 brew install OscarGTH/tap/readcode
@@ -28,557 +27,193 @@ Anywhere with a Rust toolchain:
 cargo install --git https://github.com/OscarGTH/readcode
 ```
 
-Or from a clone: `cargo build --release`, then run `target/release/readcode`.
-
-The snippet corpus is compiled into the binary, so a single executable is the whole
-install — no data files, no network at runtime unless you choose a model or agent.
+The corpus and the evals are compiled into the binary, so a single executable is the whole
+install — no data files to copy, and no network at runtime unless you choose a model or agent.
 
 ## Quick start
-
-Install it, run it, and the first run sets itself up:
 
 ```sh
 readcode
 ```
 
-It asks which language you want, **who should grade you** (an agent already on your machine,
-or an API key), and **which model** — then writes those to `~/.local/share/readcode/config.toml`
-so no second run needs a flag or an export. It finishes by listing the commands worth knowing.
-
-```
-First, how should your answers be graded?
-  1 · an agent already on this machine (opencode acp)
-  2 · an API key (set READCODE_API_KEY afterwards)
-reviewer 1-2 [1]:
-Asking that agent which models it offers…
-  1 · deepseek/deepseek-v4-pro  DeepSeek/DeepSeek V4 Pro
-  ...
-model 1-14 [1]:
-saved · ~/.local/share/readcode/config.toml
-```
+The first run asks which language you want, **who should grade you** (an agent already on your
+machine, or an API key), and **which model**, then writes those to
+`~/.local/share/readcode/config.toml` and lists the commands worth knowing. `readcode setup`
+reopens it later.
 
 The model is never guessed: `readcode` will not grade with whatever your agent defaults to,
-because that default is frequently a free shared-queue model, and finding out afterwards that
-something you did not choose marked your answers is worse than being asked once.
+because that default is frequently a free shared-queue model. `readcode models` shows what the
+agent offers, free tiers marked.
 
-`readcode setup` reopens the wizard later. Environment variables still win over the file, so
-`READCODE_MODEL=… readcode` overrides it for one run, and the API key is deliberately *not*
-stored — it stays in `READCODE_API_KEY`, because a settings file ends up in dotfiles repos and
-bug reports.
-
-Then everyday:
+Everyday:
 
 ```sh
-readcode            # annotate the snippet that is most due
-readcode status     # what you have mastered, what is due
-readcode list       # the snippets available, with their levels
-readcode lang       # the languages in the corpus, and how far you are in each
-readcode level      # what level you are reading at
+readcode            # one sitting: the snippet that is most due
+readcode status     # where you are, what is due, what is next
 readcode history    # past sittings, and the grading page for each
+readcode lang       # the languages in the corpus, and how far you are in each
+readcode level      # the rungs, with yours marked
+readcode list       # every snippet, with its level
 readcode setup      # change reviewer, agent or model
-readcode draft f.rs # turn a file into a draft snippet with your reviewer
-readcode models     # which models your agent offers
 ```
 
-The first run asks two things — which language, and how much of it you can read — then
-starts you on the easiest material that fits. Answering honestly matters more than
-answering flatteringly: the app would rather hand you five easy lines than a file you
-cannot start.
+## The loop
 
-### Languages
+The code fills the screen and the question is asked underneath it, beside the box you type in.
+Answer in your own words and the pair lands **on the code** — the question as a dim `// ? …`
+comment, your answer under it, above the lines they are about — so the snippet becomes your own
+annotated copy as you go.
 
-The corpus carries more than one language, and each keeps its own level, its own seen
-snippets and its own concepts. Reading Go never decides what Rust offers you next:
+- `Enter` submits and moves on; `Enter` on an empty answer skips that question
+- `Ctrl-J` adds a newline, `Ctrl-B` goes back and reopens the previous answer
+- `Esc` stops — and keeps what you have written
 
-```sh
-readcode lang           # what the corpus has, and how far you are in each
-readcode lang go        # switch, and keep both
-readcode --language go  # or for one run only
-```
-
-`readcode status` counts only the language you are in, and lists the others — with their
-seen counts — at the bottom, so the second language is discoverable rather than something
-you have to remember. `readcode --snippet` still reaches anything in either language.
-
-The shipped corpus is twenty-one Rust snippets and eight Go ones, levels 1 to 3 for Go and 1
-to 4 for Rust; `readcode list` shows both, with the language in its own column. Most ideas are
-taught by more than one snippet on purpose — `rust.return.value` appears in eight, the borrow
-of a `&str` in seven — so a concept you meet again comes back in different code rather than as
-the same file with the same question.
-
-![A Go sitting's review: `func` and `string` coloured as Go keywords, and Go Tour links under each prompt](docs/go.png)
-
-### Levels
-
-Every snippet is written for a rung, 1 to 5, easiest first:
-
-```
-1 · just started — values, arithmetic, printing
-2 · small functions — branches, loops, one thing at a time
-3 · whole files — structs, methods, iteration, error handling
-4 · unfamiliar code — generics, traits, lifetimes, other people's idioms
-5 · reads this language for a living
-```
-
-`readcode level 2` sets yours, and `readcode level` shows the rungs with yours marked. The
-level does two things:
-
-- **It caps what is offered.** Snippets above your level plus one stop appearing, however
-  due their concepts are. The one rung above is deliberate: a stretch you can mostly read
-  is what moves you up.
-- **It starts you at the bottom of that rung.** While anything at or below your level still
-  has something unmastered, the app keeps choosing from it instead of drifting upward. Once
-  that rung is solid, harder material joins the rotation and `readcode status` says so:
-  `you have cleared level 1 (12 of 12 concepts solid) — readcode level 2 opens up harder code`.
-
-A snippet can declare a band instead of a single rung (`levels = [2, 4]`), which is how
-"this is a level 2 idea but the code itself is level 4" gets expressed.
-
-Your level is a claim about you, not a gate: nothing stops you from running
-`readcode --snippet rust-003` to try the iterator chain, and it will not move your level
-down if you struggle. Setting it lower is the useful direction — going back over the easy
-material is cheap, and being dropped into code you cannot read teaches nothing.
-
-Progress is saved between runs, so `readcode` is the same command every day — and the same
-command in both languages, which is why the language is remembered rather than passed each
-time.
-
-## Using it
-
-The code fills the screen, you answer in your own words, and your answer lands **on the
-code**: each note appears above the line it explains, as a `//` comment, so the snippet
-turns into your own annotated copy as you go. The question sits directly under the lines it
-is about, marked with `└`, so the thing you are answering is never further away than the code
-you are reading.
-
-![The question under the lines it asks about, and the notes written above them](docs/tui.png)
-
-- `Enter` submits an answer and moves to the next question
-- `Enter` on an empty answer skips that question (an honest "no idea" is fine)
-- `Ctrl-J` adds a newline when one sentence is not enough
-- `Ctrl-B` goes back and reopens the previous answer, keeping what you had typed
-- `Esc` stops without saving anything
-
-When the last prompt is answered you get a **check screen** rather than a model call: every
-question with what you wrote, the one you are on marked with `>`. `j`/`k` moves, `Enter`
-reopens the selected answer with its text in place, and nothing is sent until `Ctrl-S`.
+When the last prompt is answered you get a **check screen** rather than a model call: the code
+with every note on it, the answer you are on quoted below, `j`/`k` to walk them, `Enter` to
+reopen one. `Ctrl-S` sends them; nothing is graded before that.
 
 ![The check screen: every answer before it is graded](docs/tui-confirm.png)
 
-When the last question is answered it grades you per concept and shows you the review —
-what was right, what was thin, and what you missed:
+Then the review, per prompt: the question, your answer, the code they were about with the
+verdict on its first row, what you missed, the lesson, and reading.
 
-![The review: for each prompt, the code it was about, your answer, the verdict, what you missed, and the explanation](docs/tui-review.png)
+![The review: question, answer, code with the verdict, what was missed, the lesson and the reading](docs/tui-review.png)
 
-Each entry keeps the code under your answer, because the moment you want to know *why*
-something was wrong is the moment you need to see what you were looking at. The question and
-your answer come first, then the code with the verdict on its first row — the same order as
-the notes you wrote during the sitting:
+- `why` appears on every prompt, right answers included: a right answer can be a guess, and the
+  mechanism is the part worth keeping
+- `docs` sits under the entry it belongs to, from a table keyed by concept — a study tool that
+  invents URLs is worse than one that stays quiet
+- a concept the reviewer could not judge from that answer is left out rather than marked
+  "unknown", since a line is only asked to prove what it can show
 
-- `ask` — the question you were answering, then `you` — your words, both above the code they
-  are about, so an entry reads the way the sitting did
-- `✓ 4 │ let total = apples + pears;` — the mark is the verdict, the line is what you read
-- `review` — only when something was off: what the answer did and did not say
-- `missed · …` — the points it left out; a concept the reviewer could not judge from that
-  answer is left out rather than marked "unknown", since a line is only asked to prove what
-  it can show
-- `why` — the lesson: what the code actually does, in two or three sentences. It appears on
-  every prompt, right answers included, because a right answer can be a guess and the full
-  mechanism is the part worth keeping. Grading that only marks you down is not teaching.
-- `docs` — reading under the entry it belongs to, so a link is never something you have to
-  match back to a prompt afterwards.
-
-Entries are separated by a rule as well as a slightly different background: the rule reads
-in any terminal and needs no colour, and the shade helps when you are scrolling fast.
-
-Links come from a table keyed by concept namespace rather than from the model, because a
-study tool that invents URLs is worse than one that stays quiet. A corpus author can add
-their own with `docs = [{ title = "…", url = "…" }]`.
-
-### When grading fails
-
-A reviewer that answers with broken JSON does not cost you the sitting. The reply is read
-tolerantly first — prose around it, a code fence, a trailing comma, a newline inside a
-string, or a reply cut off mid-object are all normal model behaviour, and none of them is
-worth losing six answers over. If it still cannot be read, `readcode` asks once more, and in
-the full-screen view the failure leaves your answers on screen with `r` to try again.
-
-If it keeps failing, the error names what the parser objected to and writes the reviewer's
-whole reply to `$TMPDIR/readcode-last-reply.txt`, which is the file worth reporting.
-
-A turn that dies with a bare JSON-RPC internal error (`The requested model is not supported.
-(code -32603)`) is the agent's provider refusing, not `readcode` misbehaving: the id was
-accepted as a setting but the provider behind it is not available in that session — usually a
-lapsed login or a model withdrawn upstream. The error says so and points at `readcode models`.
+Every graded sitting is kept, so the page is not something you see once:
 
 ```sh
-readcode --snippet 002     # a specific snippet (id, or any unambiguous suffix)
-readcode --lines           # force line-by-line; --blocks forces the other way
-readcode --no-tui          # plain line-by-line view, for pipes and screenshots
-readcode check             # validate your own snippet files
-readcode reset --yes       # wipe progress and start over
+readcode history      # when, what, and how it went
+readcode history 2    # that grading page again, scrollable
 ```
 
-With `--no-tui` (or when the output is piped) the same sitting runs as plain text: a line
-containing only `.` finishes an answer, `:unknown` says you have no idea, `:quit` stops.
+## Blocks or lines
 
-### Blocks or lines
+Comprehension and attention to detail are different skills, so the app asks both. The first
+visit uses what the snippet was authored for; the next visit to the same snippet alternates.
+`--lines` / `--blocks` override it for one sitting.
 
-Comprehension and attention to detail are different skills, so the app asks both:
+Line mode needs a snippet whose lines were authored one by one. When nobody said what each
+line teaches, `readcode` asks the block instead and says so — asking every line and grading it
+against the whole block is how a correct answer about an `if` gets marked down for not
+mentioning the `append` on the next line.
 
-- **block by block** — one question per semantic block: "what does `shout` take, and what
-  does it give back?"
-- **line by line** — one question per significant line, answered the way you would
-  annotate a file: the line being asked is marked, and the lines you have already
-  explained carry your note above them as a `//` comment.
-
-A note about a single line sits above that line. A note about a block sits *after* the
-block's last line, labelled with its span (`// on lines 1-5: …`), so it never reads as a
-comment on whichever line happened to open the block.
-
-You do not choose: the first visit uses whatever the snippet is authored for, and the
-next visit to the same snippet **alternates** to the other mode. Same code, different
-question. `--lines` / `--blocks` override it for one sitting.
-
-### Reading a sitting again
-
-Every graded sitting is kept, so the page is not something you only see once:
-
-```sh
-readcode history      # what you have sat, when, and how it went
-readcode history 2    # that sitting's grading page, in full
-```
-
-The list dates each one (`2 hours ago · 2026-11-11 08:14`) and counts its verdicts
-(`2 correct · 1 partial`). Opening one gives the same page the sitting ended on — the code,
-the question that was asked, what you wrote, every verdict, the lesson and the reading — and
-it scrolls with `j`/`k` until you leave.
-
-The snippet is stored with the sitting rather than looked up later: corpora change, and a
-history that says "snippet not found" is not a history. The file is `history.json` beside
-`progress.json`, newest first, capped at 200 sittings.
-
-### Seeing where you are
-
-`readcode status` answers three questions and stops:
+## Where you are
 
 ```
-level 2 · small functions — branches, loops, one borrow at a time
+go · level 2 · small functions — branches, loops, one thing at a time
   1 ████████ 100%  9/9 solid
   2 ████░░░░  52%  2/9 solid  ← you are here
   3 ░░░░░░░░   0%  0/12 solid
 
-  snippets  4 of 15 seen · 2 new at your level
+  snippets  4 of 8 seen · 2 new at your level
   concepts  11 started · 11 solid · 3 not started
 
 needs work
-  rust.iterator.for                  ███░░░░░  40%
-  rust.vec.type                      ██░░░░░░  25%
+  go.slice.header                    ███░░░░░  40%
+  go.append                          ██░░░░░░  25%
+
+  other languages · rust 3/15 — `readcode lang <name>` switches
 ```
 
-The ladder is the point: each rung's bar is the **average strength** of its concepts, so one
-correct answer moves it, while the `solid` count is the strict measure (three correct
-answers) that schedules the long intervals. No dates anywhere — when something comes back is
-the app's business, and a deadline you did not ask for reads as homework.
+Each rung's bar is the average strength of its concepts, so one correct answer moves it, while
+`solid` is the strict measure (three correct answers) that schedules the long intervals. No
+dates anywhere: when something comes back is the app's business.
 
-After every sitting you get one line of the same: `level 1 · 3 of 9 solid at this level`.
+`level` caps what is offered at your rung plus one — a stretch you can mostly read is what
+moves you up — and keeps choosing from the bottom until that rung is exhausted, so easy
+material is finished rather than skipped. Your level is a claim about you, not a gate:
+`--snippet rust-003` will still hand you the iterator chain.
 
-The corpus that ships is 15 Rust snippets from `let` and `println!` up to iterator chains,
-boxed errors and enums with payloads. `readcode list` shows each with its level.
+Languages are separate: each keeps its own level, its own seen snippets and its own concepts,
+and `readcode status` counts only the one you are in. Most ideas are taught by more than one
+snippet on purpose — `rust.return.value` appears in eight — so a concept you meet again comes
+back in different code.
 
-`readcode` never re-offers a snippet you have answered while there is anything else to do at
-your level — either a snippet you have not met, or a concept that has come due again. A rung
-only becomes "old" when it is actually exhausted, not when it stops feeling new.
+![A Go review: `func` and `string` coloured as Go keywords, Go Tour links under each prompt](docs/go.png)
 
-### Where progress lives
-
-`$XDG_DATA_HOME/readcode/progress.json`, or `~/.local/share/readcode/progress.json`.
-Override with `--data-dir <dir>` — handy for trying the app without touching your real
-progress.
-
-## Choosing a reviewer
-
-Grading needs a model, so the first run needs one of two things set up:
+## Reviewers
 
 | `--reviewer` | Needs | What you get |
 |---|---|---|
 | `acp` | an ACP agent on your machine | your own agent and subscription grade; no API key |
 | `api` | one API key | a model grades over one HTTP call |
 
-**An ACP agent needs a pinned model.** `--model <id>` or `READCODE_MODEL=<id>`, with no
-fallback: the agent's own default is never used, even when it is the only thing available.
-Before the first question, `readcode` opens the agent once and checks that the id is one it
-offers — a second of setup rather than a sitting lost to a model the agent cannot run.
-`readcode models` lists what the agent offers and marks the free tiers, so the choice is
-made with the price in view. If you ask for a model the agent does not have, the run stops
-rather than grading with something else.
+An ACP agent needs a pinned model — `--model <id>`, `READCODE_MODEL`, or the settings file —
+with no fallback to the agent's default. Before the first question `readcode` opens the agent
+once to check the id is one it offers, so a model it cannot run costs a second instead of a
+sitting.
 
-Auto-detection uses a configured agent first, then a key. With neither, `readcode`
-stops and tells you which exports to set — `status`, `list` and `check` work either way.
-`READCODE_REVIEWER=acp` makes the choice permanent.
+For an API key: `READCODE_API_KEY`, plus optional `READCODE_API_BASE`, `READCODE_API_STYLE`
+(`openai` or `anthropic`) and `READCODE_MODEL`. For an agent: `READCODE_AGENT="opencode acp"`
+or whatever speaks ACP. Environment beats the settings file, so
+`READCODE_MODEL=… readcode` overrides for one run; the key is deliberately never written to
+disk.
 
-**With an API key** (OpenAI- or Anthropic-compatible, including local servers):
+## When something goes wrong
 
-```sh
-export READCODE_API_KEY=sk-...
-export READCODE_MODEL=gpt-4o-mini                     # optional
-export READCODE_API_BASE=http://localhost:11434/v1    # optional
-export READCODE_API_STYLE=openai                      # openai | anthropic
-```
+A reviewer that answers with broken JSON does not cost you the sitting: the reply is read
+tolerantly, retried once, and the whole reply is written to `$TMPDIR/readcode-last-reply.txt`
+if it still fails — that is the file worth reporting. In the full-screen view a failure leaves
+your answers on screen with `r` to try again.
 
-**With your own agent** (anything that speaks ACP):
-
-```sh
-export READCODE_AGENT="opencode acp"     # or "copilot --acp", an adapter, ...
-readcode --reviewer acp
-```
-
-**Models are never picked for you.** `--model <id>` or `READCODE_MODEL=<id>` is the only
-way a model is chosen; without one, the agent's own default is used and the review line
-names whatever actually answered. If that default is a free shared-queue model, `readcode`
-says so once rather than switching behind your back. To see the options:
+`The requested model is not supported. (code -32603)` is the agent's provider refusing, not
+`readcode` misbehaving: the id was accepted as a setting but is unavailable in that session —
+usually a lapsed login or a model withdrawn upstream. The error says so and points at
+`readcode models`.
 
 ```sh
-readcode models          # models the agent offers, with the current one marked
-readcode --model deepseek/deepseek-v4-pro
+readcode --snippet 002     # a specific snippet by id, or any unambiguous suffix
+readcode --lines           # force line-by-line; --blocks forces the other way
+readcode --no-tui          # plain text, for pipes and scripts (`.` ends an answer, `:quit` stops)
+readcode check             # validate your own snippet files
+readcode reset --yes       # wipe progress and start over
 ```
 
-## Drafting a snippet with your reviewer
+Progress lives in `$XDG_DATA_HOME/readcode/` (or `~/.local/share/readcode/`): `progress.json`,
+`config.toml`, `history.json` and `draft.json` for a sitting you left. `--data-dir <dir>`
+points all of it somewhere else.
 
-Hand-writing a snippet means reading the code, choosing blocks, writing one question each,
-and writing the ground truth the grader marks against. The last part is what makes grading
-sharp, and it is also the slow part — so let the model draft it and keep the judging for
-yourself:
+## Building a corpus
 
-```sh
-readcode draft src/parser.rs                      # print a draft
-readcode draft src/parser.rs --span 41-58         # just that function
-readcode draft src/parser.rs --level 3 --write    # save it under ./snippets/rust/
-```
-
-It reads the file, asks your reviewer (ACP agent or BYOK key) for one snippet in the corpus
-format, then fixes the id, the language and the level itself. Before it shows you anything
-the draft goes through the same rules `readcode check` enforces, so a draft that arrives is
-a draft that loads and plays.
-
-Three things to expect from the header of every draft:
-
-- `# fixed: block 2 extended from line 5 to 7 to cover the gap` — models think in ideas, not
-  in partitions, so they leave blank lines and closing braces uncovered. That is unambiguous,
-  so it is repaired and reported. An **overlap** is not: that means the reply is confused and
-  the draft is refused with the reason.
-- `# check: block 1 asks more than one question — split it in two: …` — the failure that
-  hurts grading most, flagged by counting interrogatives. Two questions in one ask means one
-  answer covering two things, and the note lands on whichever line opened the block.
-- Concepts are reused where they already exist (`--level` aside, the draft is told the corpus'
-  concept ids), so progress carries across snippets instead of fragmenting.
-
-What it will not do is tell you whether the *questions* are good. Read the draft: the asks
-are the product, and the notes are what the grader judges against. A vague note is a vague
-grade, and no amount of validation catches that.
-
-## Adding your own corpus
-
-The built-in snippets are compiled into the binary, so plain `readcode` works anywhere.
-To use your own, point it at a directory of TOML files:
-
-```sh
-readcode --corpus ~/my-snippets
-readcode --corpus ~/my-snippets check      # validate before you study
-```
-
-Files are found recursively, so `~/my-snippets/rust/*.toml` and
-`~/my-snippets/python/*.toml` both work. One snippet per file; the `id` must be unique.
-The directory names are a convention, not a rule — `language` in the file is what counts,
-and a language the corpus has never seen simply becomes a new entry in `readcode lang`.
-
-### The smallest snippet that works
-
-```toml
-id = "rust-001"
-language = "rust"
-title = "Ownership: moving a String into a function"
-
-code = '''
-fn shout(mut text: String) -> String {
-    text.push('!');
-    text
-}
-'''
-
-[[blocks]]
-lines = [1, 4]
-concepts = ["rust.ownership.param", "rust.ownership.return"]
-```
-
-That is a complete snippet: the code, one block covering lines 1-4, and the two concepts you
-have to name. `readcode check` accepts it, block mode asks "explain what this block does",
-and a reviewer grades the answer.
-
-### Sharpening it — all optional
-
-Two fields make grading more specific. Add them where they earn it, skip them where they
-do not.
-
-```toml
-source = "adapted from The Rust Book, ch. 4.1"
-intro = "Say what each block does to the data."
-
-[[blocks]]
-lines = [1, 4]
-ask = "What does `shout` take, and what does it give back?"
-concepts = ["rust.ownership.param", "rust.mut.param", "rust.ownership.return"]
-notes = { "rust.ownership.param" = "`String` is not `Copy`: passing it by value hands ownership to `shout`.", "rust.mut.param" = "`mut text` makes the binding writable inside this function only.", "rust.ownership.return" = "The tail expression returns `text`, moving ownership back to the caller." }
-```
-
-- `ask` — the question the learner sees. Without it they get a generic one.
-- `notes` — the ground truth per concept: what a correct answer has to say. The reviewer is
-  shown these, so it grades against your rubric instead of guessing at the code. One line,
-  only for the concepts that need it.
-
-### Asking about single lines
-
-In line mode every significant line is asked on its own (blank lines and lone braces are
-skipped). To give one line its own question and note:
-
-```toml
-  [[blocks.line]]
-  at = 2
-  ask = "Why is `mut` on the parameter, and who does it help?"
-  concepts = ["rust.mut.param"]
-  notes = { "rust.mut.param" = "`mut text` makes the binding writable inside this function only." }
-```
-
-- `at` is a single line inside the owning block. `ask`, `concepts` and `notes` all default to
-  the block's, so `at` alone is a valid entry.
-- A line without one still gets "What does line N do?", graded against the block's concepts.
-
-### Field reference
-
-Snippet:
-
-- `id` — unique; `--snippet` matches it, or its title. Prefix by language: `rust-001`.
-- `language` — `rust`, `go`, or any name of your own. It decides which selectors offer the
-  snippet, which progress it counts towards, and which vocabulary the highlighter uses;
-  a language the lexer does not know falls back to Rust's colours rather than none.
-- `title` — shown in the header, and matched by `--snippet` alongside the title.
-- `code` — the code, in a TOML literal string (`'''`). Line numbers are 1-based.
-- `source`, `intro` — optional: where the code came from, and one line saying what it
-  *is*. Both are descriptive; the app already explains what the learner has to do.
-- `asks` — optional: `"blocks"`, `"lines"` or `"auto"` (default: lines if the snippet has
-  `blocks.line` entries, otherwise blocks).
-- `docs = [{ title, url }]` — optional: reading for this snippet specifically, shown in
-  the review above the per-concept links.
-- `level` — optional: the rung this snippet is written for, 1 to 5. Omit it and the snippet
-  is offered to everyone, which is the right default for a small personal corpus.
-- `levels = [from, to]` — optional: a band, for a simple idea shown in code that is harder
-  to read than the idea. `level` and `levels` are mutually exclusive.
-
-Block:
-
-- `lines = [start, end]` — 1-based, inclusive, in order, no gaps.
-- `concepts` — what the learner must name. This is the unit of progress, not the snippet:
-  mastery and scheduling are per concept, so reuse the same id wherever the idea appears.
-  Namespace them (`rust.ownership.move`), and make each one a rule of this language rather
-  than of programming in general — see the tips below.
-- `ask` — optional question for the block.
-- `notes` — optional map of concept → ground truth for that concept.
-- `line` — optional `[[blocks.line]]` entries, as above.
-
-### Rules `readcode check` enforces
-
-- every code line belongs to exactly one block, in order, no gaps or overlaps
-- every block has at least one concept, and no empty ids
-- a `notes` key has to be a concept declared on that block (or line) — this is what catches
-  a typo in a concept id
-- line questions sit inside their block, are not duplicated, and only use the block's concepts
-- ids are unique across the corpus
-
-When a range is wrong, `readcode check` prints the snippet with line numbers, so you never
-count lines by hand to find the off-by-one.
-
-### Tips for snippets worth studying
-
-- **Teach one idea in more than one place.** A concept you keep meeting should not always be
-  the same snippet: the scheduler revisits whatever is weakest, and being handed the same file
-  a third time teaches the file, not the rule. Two or three snippets per important concept,
-  with different code, is what makes repetition useful.
-- **Ask about the language, not about programming.** "What does `%` do" and "what is a
-  `while` loop" teach nothing about Rust or Go; "why may this borrow end before the next
-  line", "what does `&mut self` force on the caller", "where does this key's zero value come
-  from" do. A concept is what the scheduler tracks, so a concept any language shares is a
-  slot in your review spent on something you already knew. The corpus follows this rule:
-  `rust.borrow.short`, `go.value.semantics`, `go.export.capital` — not `rust.operator.modulo`.
-
-- **Use code you actually had to read.** A file from a repo you maintain beats a textbook
-  example, because that is the skill you are training.
-- **6–15 lines, 2–4 blocks.** Long enough to be real, short enough to finish in one
-  sitting.
-- **Say which rung it is.** `level = 1` for code a beginner can read line by line, `level = 4`
-  for a lifetime puzzle in an unfamiliar crate. An unlevelled snippet is offered to
-  everybody, which in practice means it lands on a beginner and stalls them.
-- **One idea per block.** If a block needs two unrelated concepts, it is two blocks.
-- **Write the note as the correction.** If you cannot state what the learner should have
-  said in one sentence, the concept is too vague to grade — and a concept with no note is
-  graded from the code alone, which is looser.
-- **Reuse concept ids.** `rust.question_mark` across five snippets teaches the scheduler
-  that this is one skill; five one-off ids teach it nothing.
-- **One question per prompt.** If the ask needs the word "and" to join two unrelated ideas
-  ("what does `use` do, and why is the error boxed?"), it is two blocks, or one block plus a
-  `blocks.line` entry. A bundled question gets one answer covering two things, and then the
-  answer is graded twice against two rubrics that each see half of it.
-- **A line inherits its block's concepts** unless it has its own `blocks.line` entry, and
-  then it is asked to prove all of them. If a block holds two ideas that land on different
-  lines, give each line its own `ask` and `concepts`, or the question on each line asks for
-  something that line cannot show.
+The shipped corpus is 21 Rust snippets and 8 Go ones; `readcode list` shows them with their
+levels. To write your own — the format, the field reference, the rules `check` enforces, the
+line-prompt rules, and how `readcode draft` turns a file into a snippet — see
+[`docs/corpus.md`](docs/corpus.md).
 
 ## Evals
 
-Grading can regress without any Rust test failing, so it has its own suite:
-
-```sh
-cargo run -- eval                 # deterministic mock: proves the harness itself
-cargo run -- eval --target acp    # your own agent (~10 s per case)
-cargo run -- eval --target api    # BYOK
-```
-
-Cases live in `evals/cases/` as one TOML file per behaviour — a misconception must never
-be credited, "I don't know" must never be marked wrong, a correct idea in clumsy words
-must be credited. Runs land in `evals/runs/<stamp>/` with a trace per case. See
-[`evals/README.md`](evals/README.md).
+Grading can regress without any Rust test failing, so it has its own suite. See
+[`docs/evals.md`](docs/evals.md).
 
 ## Contributing
 
 ```sh
-cargo test                        # 183 tests, no network, no agent
+cargo test                        # no network, no agent
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo run -- eval --target mock   # what CI also runs
 ```
 
-CI (`.github/workflows/ci.yml`) runs those four steps on **every push, on any branch**,
-on pull requests, and on demand; superseded runs on the same ref are cancelled so a
-quick fixup does not spend the minutes twice. Model-backed evals stay manual, because
-they spend tokens.
+CI runs those four steps on every push, on pull requests, and on demand. Model-backed evals
+stay manual because they spend tokens.
 
-The screenshots in `docs/` are not mock-ups. The full-screen ones come from
-`examples/frame`, which feeds a real sitting through ratatui's test backend and hands the
-resulting cells to `scripts/render_frame.py` — the same `draw` call the terminal runs, so
-the frame is exact down to the cursor. The review frame is graded by a real agent, not by
-hand-written verdicts. The plain view is captured from a PTY by
-`scripts/capture_terminal.py` and painted by `scripts/render_terminal.py`. Regenerate with:
-
-```sh
-cargo run --quiet --example frame -- annotate /tmp/f.json
-python3 scripts/render_frame.py /tmp/f.json docs/tui.html "readcode"
-```
+The screenshots in `docs/` are not mock-ups: the full-screen ones come from `examples/frame`,
+which runs a real sitting through ratatui's test backend, and `scripts/render_frame.py` paints
+the resulting cells. The review frame is graded by a real agent.
 
 ## Roadmap
 
 - [x] Line-by-line annotation alongside block mode
-- [x] A ratatui view: the code on screen, notes written on it, arrow keys instead of prompts
-- [ ] More corpora: Python, TypeScript, and "read your own repo" mode
 - [x] A second language (Go), with its own level and progress
+- [x] A history of grading results
+- [ ] More corpora: Python, TypeScript, and "read your own repo" mode
 - [ ] A targeted follow-up question when a concept is unknown, not just a note
 - [ ] An MCP server so your agent can look up weak concepts while you work
 
